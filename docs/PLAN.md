@@ -1,8 +1,8 @@
-# Listy - Project Plan
+# Mari - Project Plan
 
 ## Overview
 
-**Listy** is a prototype CLI tool inspired by CAD-style keyboard input (Blender/AutoCAD) that provides fast, hotkey-driven command execution. It supports both real-time REPL interaction and traditional POSIX shell composition.
+**Mari** is a prototype CLI tool inspired by CAD-style keyboard input (Blender/AutoCAD) that provides fast, hotkey-driven command execution. It supports both real-time REPL interaction and traditional POSIX shell composition.
 
 ---
 
@@ -13,7 +13,7 @@
 | Mode   | Description                                                                 |
 |--------|-----------------------------------------------------------------------------|
 | REPL   | Real-time raw stdin input with statusbar display (vim-like)                 |
-| SHELL  | Traditional CLI invocation for scripting/piping (`listy cmd args...`)       |
+| SHELL  | Traditional CLI invocation for scripting/piping (`mari cmd args...`)       |
 
 ### Input Sources
 
@@ -26,10 +26,10 @@
 
 ### Multi-Activity Architecture
 
-Instead of a single `config.yml`, listy uses multiple **activity files** located under:
+Instead of a single `config.yml`, mari uses multiple **activity files** located under:
 
 ```
-~/.config/listy/activity/
+~/.config/mari/activity/
 ├── robin.yml       # Stock/options trading (robin CLI)
 ├── git.yml         # Git operations
 ├── docker.yml      # Container management
@@ -37,7 +37,7 @@ Instead of a single `config.yml`, listy uses multiple **activity files** located
 └── ...             # Any number of activities
 ```
 
-On startup, listy reads all `activity/*.yml` files and makes them available.
+On startup, mari reads all `activity/*.yml` files and makes them available.
 
 ### Activity Switching
 
@@ -53,7 +53,7 @@ The current activity is always visible in the statusbar (leftmost position).
 ### Example: `activity/robin.yml`
 
 ```yaml
-# ~/.config/listy/activity/robin.yml
+# ~/.config/mari/activity/robin.yml
 name: robin
 description: Stock & Options Trading
 
@@ -649,23 +649,23 @@ All REPL commands have direct SHELL equivalents:
 
 ### Stock Quote
 ```bash
-$ listy sq TSLA
+$ mari sq TSLA
 TSLA: $421.35 (+2.4%)
 ```
 
 ### Set Variables and Execute
 ```bash
-$ listy set SYMBOL=IWM EXP=1/17 STRIKE=225 TYPE=put PRICE=0.45 QTY=5
-$ listy b
+$ mari set SYMBOL=IWM EXP=1/17 STRIKE=225 TYPE=put PRICE=0.45 QTY=5
+$ mari b
 Order submitted: BUY 5x IWM 1/17 225P @ $0.45
 
 # Or inline:
-$ listy b --symbol IWM --exp 1/17 --strike 225 --type put --price 0.45 --qty 5
+$ mari b --symbol IWM --exp 1/17 --strike 225 --type put --price 0.45 --qty 5
 ```
 
 ### View/Modify Variables
 ```bash
-$ listy vars
+$ mari vars
 SYMBOL=IWM
 EXP=1/17
 STRIKE=225
@@ -673,29 +673,29 @@ TYPE=put
 PRICE=0.45
 QTY=5
 
-$ listy set QTY=10
+$ mari set QTY=10
 QTY=10
 ```
 
 ### Pipeline Composition
 ```bash
 # Quote multiple symbols
-$ echo -e "TSLA\nAAPL\nMSFT" | xargs -I{} listy sq {}
+$ echo -e "TSLA\nAAPL\nMSFT" | xargs -I{} mari sq {}
 
 # Cancel all open orders
-$ listy orders open --ids-only | xargs -I{} listy cancel {}
+$ mari orders open --ids-only | xargs -I{} mari cancel {}
 
 # Watch positions
-$ watch -n 5 'listy positions'
+$ watch -n 5 'mari positions'
 ```
 
 ### Interactive Invocation
 ```bash
 # Start REPL mode explicitly
-$ listy repl
+$ mari repl
 
 # Start with preset variables
-$ listy repl --symbol SPY --qty 10
+$ mari repl --symbol SPY --qty 10
 ```
 
 ---
@@ -718,10 +718,10 @@ $ listy repl --symbol SPY --qty 10
 ## Project Structure
 
 ```
-listy/
+mari/
 ├── package.json
 ├── bin/
-│   └── listy.js            # Entry point (global binary)
+│   └── mari.js            # Entry point (global binary)
 ├── src/
 │   ├── index.js            # Main dispatcher
 │   ├── repl/
@@ -742,7 +742,7 @@ listy/
 │   └── utils/
 │       ├── template.js     # Variable substitution ($VAR, ${VAR})
 │       └── validate.js     # Regex validation for variables
-├── activity/               # Default activities (also ~/.config/listy/activity/)
+├── activity/               # Default activities (also ~/.config/mari/activity/)
 │   ├── robin.yml           # Stock/options trading
 │   ├── git.yml             # Git operations
 │   └── docker.yml          # Container management
@@ -761,7 +761,7 @@ listy/
 ### Activity Loading
 
 On startup:
-1. Read all `~/.config/listy/activity/*.yml` files
+1. Read all `~/.config/mari/activity/*.yml` files
 2. Parse and validate each activity against schema
 3. Build activity list (sorted alphabetically by name)
 4. Set first activity as current (or last-used if persisted)
@@ -821,7 +821,7 @@ From `docs/CAD.md`:
 - **Runtime**: Bun (for speed and native binary linking)
 - **Config**: YAML (`js-yaml`)
 - **Terminal UI**: Raw TTY mode via Node/Bun APIs
-- **Installation**: `bun link` for global `listy` command
+- **Installation**: `bun link` for global `mari` command
 
 ## References
 

@@ -241,11 +241,11 @@ export async function runShellCommand(parsed) {
  */
 function printHelp() {
   console.log(`
-listy - CAD-style hotkey-driven CLI
+mari - CAD-style hotkey-driven CLI
 
 USAGE:
-  listy [options] <command> [args...]
-  listy repl                    Start interactive REPL mode
+  mari [options] <command> [args...]
+  mari repl                    Start interactive REPL mode
 
 BUILT-IN COMMANDS:
   set VAR=VALUE [...]           Set variable values
@@ -265,11 +265,11 @@ OPTIONS:
   --price <n>                   Set PRICE variable
 
 EXAMPLES:
-  listy -a podman ps            Run podman ps
-  listy -a git s                Run git status
-  listy b --symbol SPY --qty 5  Buy with options
-  listy set SYMBOL=IWM QTY=10   Set multiple variables
-  listy vars                    Show current values
-  listy repl                    Start REPL mode
+  mari -a podman ps            Run podman ps
+  mari -a git s                Run git status
+  mari b --symbol SPY --qty 5  Buy with options
+  mari set SYMBOL=IWM QTY=10   Set multiple variables
+  mari vars                    Show current values
+  mari repl                    Start REPL mode
 `);
 }

@@ -1,6 +1,6 @@
-# Listy
+# Marionette (`mari`)
 
-A CAD-style hotkey-driven CLI tool with REPL mode for rapid command execution.
+Rapid hotkey-driven shell execution.
 
 ## Screenshot
 
@@ -67,30 +67,75 @@ listy <command> [args...]
 Activities are defined in YAML files in the `activity/` directory:
 
 ```yaml
-name: example
-description: Example Activity
-color: "#3a86ff"
-statusFormat: "${VAR1} - ${VAR2}"
-
-env:
-  FORCE_COLOR: "1"
-
+name: robin
+description: Stock & Options Trading
+color: "#6a994e"
+statusFormat: ${SYMBOL} ${EXP} $${STRIKE} ${TYPE} ${QTY} con @ $${PRICE}
 variables:
-  VAR1:
-    type: string
-    default: "'hello'"
-    hotkey: v
-
-  COUNT:
+  QTY:
     type: int
     default: "10"
-    range: [1, 100]
+    range:
+      - 1
+      - 100
     step: 1
+    format: "%d"
+    hotkey: q
+    value: 48
+  SYMBOL:
+    type: string
+    default: "'TSLA'"
+    hotkey: "y"
+    value: IWM
+  EXP:
+    type: date
+    default: new Date()
+    range: 2025-01-01..2026-12-31
+    step: 1
+    format: M/d
+    hotkey: x
+    value: "2026-01-16T07:27:56.906Z"
+  STRIKE:
+    type: float
+    default: "225.0"
+    range:
+      - 1
+      - 9999
+    step: 0.5
+    format: "%.0f"
+    hotkey: t
+    value: 265.5
+  TYPE:
+    type: enum
+    default: "'call'"
+    range:
+      - call
+      - put
     hotkey: c
-
+    value: put
+  PRICE:
+    type: float
+    default: "0.50"
+    range:
+      - 0.01
+      - 999.99
+    step: 0.01
+    format: "%.2f"
+    hotkey: l
+    value: 0.2899999999999999
 commands:
-  R: echo "Running with $VAR1 count=$COUNT"
-  S: echo "Status check"
+  Q: robin shares quote "$SYMBOL"
+  W: robin option quote "$SYMBOL" "$EXP" "$STRIKE" "$TYPE"
+  A: robin -y option buy "$QTY" "$SYMBOL" "$EXP" "$STRIKE" "$TYPE" limit ask+1
+  b: robin -y option buy "$QTY" "$SYMBOL" "$EXP" "$STRIKE" "$TYPE" limit "$PRICE"
+  S: robin -y option sell "$QTY" "$SYMBOL" "$EXP" "$STRIKE" "$TYPE" limit "$PRICE"
+  Z: robin -y option sell all "$SYMBOL" "$EXP" "$STRIKE" "$TYPE" limit ask-1
+  P: robin positions
+  R: robin orders open
+  O: robin orders all
+  X: robin cancel "$SYMBOL"
+aliases:
+  fri: (() => { const d = new Date(); d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7 || 7)); return d; })()
 ```
 
 ### Variable Types

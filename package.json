@@ -1,14 +1,14 @@
 {
-  "name": "listy",
+  "name": "mari",
   "version": "0.1.0",
   "description": "CAD-style hotkey-driven CLI tool with REPL and shell modes",
   "type": "module",
   "bin": {
-    "listy": "./bin/listy.js"
+    "mari": "./bin/mari.js"
   },
   "scripts": {
-    "start": "bun bin/listy.js",
-    "repl": "bun bin/listy.js repl",
+    "start": "bun bin/mari.js",
+    "repl": "bun bin/mari.js repl",
     "test:jog": "bun test/jog-wheel.js"
   },
   "author": "Mike Smullin <mike@smullindesign.com>",

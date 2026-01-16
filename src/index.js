@@ -85,8 +85,8 @@ export async function runShell(args) {
   
   if (!parsed.command) {
     // No command - show help
-    console.log('Usage: listy <command> [args...] or listy repl');
-    console.log('Run "listy help" for more information');
+    console.log('Usage: mari <command> [args...] or mari repl');
+    console.log('Run "mari help" for more information');
     return 0;
   }
   
