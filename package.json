@@ -1,0 +1,10 @@
+{
+  "name": "midi-controller-tests",
+  "version": "1.0.0",
+  "description": "Hercules Starlight MIDI controller tests (zero dependencies)",
+  "type": "module",
+  "scripts": {
+    "test:midi": "bun test/midi-input.js",
+    "test:jog": "bun test/jog-wheel.js"
+  }
+}
