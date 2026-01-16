@@ -463,10 +463,18 @@ export class Repl {
     
     this._addOutput(`$ ${this._getExpandedCommand(template, input)}`);
     
-    const result = await executeCommand(key, input, {
-      onStdout: (data) => this._addOutput(data.trim()),
-      onStderr: (data) => this._addOutput(data.trim())
-    });
+    // Pause stdin to allow child process to receive input
+    process.stdin.pause();
+    
+    try {
+      const result = await executeCommand(key, input, {
+        onStdout: (data) => this._addOutput(data.trim()),
+        onStderr: (data) => this._addOutput(data.trim())
+      });
+    } finally {
+      // Resume stdin for REPL input
+      process.stdin.resume();
+    }
     
     this._addOutput(''); // Visual break after command
   }
@@ -485,10 +493,18 @@ export class Repl {
         
         this._addOutput(`$ ${this._getExpandedCommand(template, input)}`);
         
-        await executeCommand(prefix, input, {
-          onStdout: (data) => this._addOutput(data.trim()),
-          onStderr: (data) => this._addOutput(data.trim())
-        });
+        // Pause stdin to allow child process to receive input
+        process.stdin.pause();
+        
+        try {
+          await executeCommand(prefix, input, {
+            onStdout: (data) => this._addOutput(data.trim()),
+            onStderr: (data) => this._addOutput(data.trim())
+          });
+        } finally {
+          // Resume stdin for REPL input
+          process.stdin.resume();
+        }
         
         this._addOutput(''); // Visual break after command
         return;
