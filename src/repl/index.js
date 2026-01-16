@@ -10,7 +10,7 @@ import { JogWheelHandler } from './jog.js';
 import { store } from '../commands/store.js';
 import { executeCommand, executeTemplate, isCommandKey, getCommandTemplate } from '../commands/executor.js';
 import { parseValue, incrementValue, decrementValue, formatValue } from '../config/variables.js';
-import { persistVariableValues } from '../config/loader.js';
+import { persistVariableValues, loadActivities } from '../config/loader.js';
 
 /**
  * REPL class
@@ -550,7 +550,7 @@ export class Repl {
         break;
         
       case 'reload':
-        this._addOutput('Reload not yet implemented');
+        await this._reloadActivities();
         break;
         
       case 'help':
@@ -642,6 +642,38 @@ export class Repl {
    */
   _addOutput(line) {
     printOutput(line, this._getState());
+  }
+  
+  /**
+   * Reload activities from disk
+   * @private
+   */
+  async _reloadActivities() {
+    const currentActivityName = store.getCurrentActivityName();
+    
+    // Clear the store
+    store.clear();
+    
+    // Reload activities from disk
+    const activities = await loadActivities();
+    
+    if (activities.length === 0) {
+      this._addOutput('No activities found after reload');
+      return;
+    }
+    
+    // Re-register all activities
+    for (const activity of activities) {
+      store.registerActivity(activity);
+    }
+    
+    // Try to restore the previous activity, or fall back to first
+    if (currentActivityName && store.setCurrentActivity(currentActivityName)) {
+      this._addOutput(`Reloaded ${activities.length} activities (current: ${currentActivityName})`);
+    } else {
+      store.setCurrentActivity(activities[0].name);
+      this._addOutput(`Reloaded ${activities.length} activities (switched to: ${activities[0].name})`);
+    }
   }
   
   /**

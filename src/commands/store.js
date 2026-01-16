@@ -296,6 +296,14 @@ export class VariableStore {
     const idx = names.indexOf(this.currentActivity);
     return names[(idx - 1 + names.length) % names.length];
   }
+  
+  /**
+   * Clear all activities (for reload)
+   */
+  clear() {
+    this.activities.clear();
+    this.currentActivity = null;
+  }
 }
 
 // Singleton instance

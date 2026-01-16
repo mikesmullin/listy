@@ -98,12 +98,13 @@ export async function runShell(args) {
  * @param {string[]} args - Command line arguments
  */
 export async function main(args) {
-  // Check for repl mode
-  if (args[0] === 'repl') {
+  // Check for repl mode (explicit or no arguments)
+  if (args.length === 0 || args[0] === 'repl') {
     const options = {};
     
-    // Parse repl options
-    for (let i = 1; i < args.length; i++) {
+    // Parse repl options (skip 'repl' if present)
+    const startIdx = args[0] === 'repl' ? 1 : 0;
+    for (let i = startIdx; i < args.length; i++) {
       const arg = args[i];
       if (arg === '--symbol' && args[i + 1]) {
         options.symbol = args[i + 1];

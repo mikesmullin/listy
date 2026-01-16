@@ -423,6 +423,27 @@ export function initTerminal(state) {
 }
 
 /**
+ * Restore scroll region after child process (without clearing screen)
+ * @param {object} state - Current state
+ */
+export function restoreScrollRegion(state) {
+  const { rows } = getTermSize();
+  currentStatusHeight = getStatusHeight(state);
+  const scrollBottom = rows - currentStatusHeight;
+  
+  let restore = '';
+  restore += hideCursor();
+  restore += setScrollRegion(1, scrollBottom);
+  restore += moveTo(1, 1);  // Position cursor at top of scroll region
+  restore += showCursor();
+  
+  process.stdout.write(restore);
+  
+  // Draw the status bar
+  renderStatusOnly(state);
+}
+
+/**
  * Reset terminal to normal state
  */
 export function resetTerminal() {
