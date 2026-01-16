@@ -42,7 +42,7 @@ export async function execute(command, options = {}) {
 export async function executeCapture(command, options = {}) {
   return new Promise((resolve) => {
     const proc = spawn('sh', ['-c', command], {
-      stdio: ['inherit', 'pipe', 'inherit'],
+      stdio: ['inherit', 'pipe', 'pipe'],
       env: {
         ...process.env,
         ...options.env
@@ -56,6 +56,13 @@ export async function executeCapture(command, options = {}) {
       stdout += data.toString();
       if (options.onStdout) {
         options.onStdout(data.toString());
+      }
+    });
+    
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+      if (options.onStderr) {
+        options.onStderr(data.toString());
       }
     });
     
