@@ -77,6 +77,12 @@ export class Repl {
       return;
     }
     
+    // Global: Ctrl+L to clear screen/scrollback
+    if (key.type === 'ctrl' && key.key === 'l') {
+      this._clearScreen();
+      return;
+    }
+    
     // Handle based on mode
     switch (this.mode.getMode()) {
       case MODE.NORMAL:
@@ -133,11 +139,11 @@ export class Repl {
       return;
     }
     
-    // A - enter AGENT mode
-    if (key.type === 'char' && key.key === 'A') {
-      this.mode.toAgent();
-      return;
-    }
+    // A - enter AGENT mode (disabled for now)
+    // if (key.type === 'char' && key.key === 'A') {
+    //   this.mode.toAgent();
+    //   return;
+    // }
     
     // ? - show available commands
     if (key.type === 'char' && key.key === '?') {
@@ -636,6 +642,17 @@ export class Repl {
    */
   _addOutput(line) {
     printOutput(line, this._getState());
+  }
+  
+  /**
+   * Clear screen and scrollback buffer
+   * @private
+   */
+  _clearScreen() {
+    // Clear scrollback: ESC[3J clears scrollback, ESC[2J clears screen, ESC[H moves to home
+    process.stdout.write('\x1b[3J\x1b[2J\x1b[H');
+    // Re-initialize terminal with scroll region
+    initTerminal(this._getState());
   }
   
   /**
