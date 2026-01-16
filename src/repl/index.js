@@ -68,6 +68,9 @@ export class Repl {
   async _handleKey(key) {
     if (!this.running) return;
     
+    // Debug: log received key
+    this._addOutput(`[DEBUG] Key: ${JSON.stringify(key)}`);
+    
     // Global: Ctrl+C / Ctrl+D to exit
     if (key.type === 'ctrl' && (key.key === 'c' || key.key === 'd')) {
       this.stop();

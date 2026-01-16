@@ -165,13 +165,45 @@ export class InputHandler {
   }
   
   /**
-   * Handle raw data
+   * Handle raw data - process each character/sequence separately
    * @private
    */
   _handleData(data) {
-    const key = parseKey(Buffer.from(data));
-    for (const listener of this.listeners) {
-      listener(key);
+    const str = data.toString();
+    let i = 0;
+    
+    while (i < str.length) {
+      let chunk;
+      
+      // Check for escape sequences
+      if (str[i] === '\x1b') {
+        // Find the end of the escape sequence
+        if (str[i + 1] === '[') {
+          // CSI sequence - ends with a letter
+          let j = i + 2;
+          while (j < str.length && str[j] >= '0' && str[j] <= '?') {
+            j++;
+          }
+          if (j < str.length) {
+            j++; // Include the final letter
+          }
+          chunk = str.slice(i, j);
+          i = j;
+        } else {
+          // Just escape
+          chunk = str[i];
+          i++;
+        }
+      } else {
+        // Single character
+        chunk = str[i];
+        i++;
+      }
+      
+      const key = parseKey(Buffer.from(chunk));
+      for (const listener of this.listeners) {
+        listener(key);
+      }
     }
   }
 }
