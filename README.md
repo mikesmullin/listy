@@ -2,6 +2,10 @@
 
 A CAD-style hotkey-driven CLI tool with REPL mode for rapid command execution.
 
+## Screenshot
+
+![screenshot](docs/20260116-011117-screenshot.png)
+
 ## Features
 
 - **Hotkey-driven**: Single-key commands for instant execution
