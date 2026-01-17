@@ -12,6 +12,8 @@ Rapid hotkey-driven shell execution.
 - **Activity-based**: Switch between different activity contexts (git, podman, trading, etc.)
 - **Variable system**: Define and edit variables with type validation (int, float, string, enum, date)
 - **VAR EDIT mode**: Real-time variable editing with MIDI jog wheel support (for fun)
+- **LLM mode**: Send prompts to a configured LLM with scrollback buffer as context
+- **SHELL mode**: Execute raw shell commands without leaving the REPL
 - **Persistent values**: Variable values are saved to YAML and restored on restart
 - **Configurable status bar**: Custom status format with variable substitution
 - **Scroll region**: Clean terminal output with fixed status bar
@@ -45,8 +47,10 @@ listy <command> [args...]
 - `Tab` / `Shift+Tab` - Switch between activities
 - `:` - Enter CMD mode
 - `$` - Enter VAR EDIT mode
+- `@` - Enter LLM mode
+- `!` - Enter SHELL mode
 - `?` - Show available commands
-- `Ctrl+L` - Clear screen
+- `Ctrl+L` - Clear screen and buffer
 - `Ctrl+C` / `Ctrl+D` - Exit
 
 ### VAR EDIT Mode
@@ -61,6 +65,34 @@ listy <command> [args...]
 - `:unset VAR` - Reset variable to default
 - `:vars` - List all variables
 - `:help` - Show help
+
+### LLM Mode
+- Type your prompt, `Enter` to submit (stays in LLM mode)
+- `Escape` - Exit to NORMAL mode
+
+The prompt is sent to the command configured in `config.yml`. The scrollback buffer (`buffer.log`) is available as context via `$_BUFFER`.
+
+### SHELL Mode
+- Type a shell command, `Enter` to execute (stays in SHELL mode)
+- `Escape` - Exit to NORMAL mode
+
+## Global Configuration
+
+Create `config.yml` in the project root for global settings:
+
+```yaml
+# Command executed when submitting input in LLM mode (@)
+# $* is replaced with the user's input string
+# $_BUFFER is the path to buffer.log (scrollback capture)
+llm_shell: cat $_BUFFER | subd -v -t text "$*"
+```
+
+### Buffer Logging
+
+All stdout/stderr from executed commands is captured to `buffer.log` in the project root. This file is:
+- Appended to on each command output
+- Truncated when `Ctrl+L` is pressed
+- Available in LLM mode via `$_BUFFER` for providing context to the LLM
 
 ## Activity Configuration
 
