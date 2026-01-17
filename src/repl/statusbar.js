@@ -211,6 +211,10 @@ function formatMode(mode) {
       return `${FG_YELLOW}-- INPUT --${RESET}`;
     case 'AGENT':
       return `${FG_MAGENTA}-- AGENT --${RESET}`;
+    case 'LLM':
+      return `${FG_GREEN}-- LLM --${RESET}`;
+    case 'SHELL':
+      return `${FG_CYAN}-- SHELL --${RESET}`;
     default:
       return '';
   }

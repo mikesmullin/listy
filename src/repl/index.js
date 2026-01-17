@@ -8,9 +8,9 @@ import { ModeStateMachine, MODE } from './modes.js';
 import { render, initTerminal, resetTerminal, printOutput, clearScreen, showCursor } from './statusbar.js';
 import { JogWheelHandler } from './jog.js';
 import { store } from '../commands/store.js';
-import { executeCommand, executeTemplate, isCommandKey, getCommandTemplate } from '../commands/executor.js';
+import { executeCommand, executeTemplate, isCommandKey, getCommandTemplate, executeLlmShell, executeShellDirect } from '../commands/executor.js';
 import { parseValue, incrementValue, decrementValue, formatValue } from '../config/variables.js';
-import { persistVariableValues, loadActivities } from '../config/loader.js';
+import { persistVariableValues, loadActivities, initBuffer, clearBuffer, closeBuffer, getLlmShellCommand } from '../config/loader.js';
 
 /**
  * REPL class
@@ -31,6 +31,9 @@ export class Repl {
    */
   async start() {
     this.running = true;
+    
+    // Initialize buffer.log for scrollback capture
+    await initBuffer();
     
     // Set up input handlers
     this.input.onKey(this._handleKey.bind(this));
@@ -57,6 +60,7 @@ export class Repl {
     this.running = false;
     this.input.stop();
     await this.jog.stop();
+    closeBuffer();
     resetTerminal();
     process.stdout.write(clearScreen() + showCursor());
     if (this._resolve) {
@@ -79,7 +83,7 @@ export class Repl {
     
     // Global: Ctrl+L to clear screen/scrollback
     if (key.type === 'ctrl' && key.key === 'l') {
-      this._clearScreen();
+      await this._clearScreen();
       return;
     }
     
@@ -96,6 +100,12 @@ export class Repl {
         break;
       case MODE.AGENT:
         await this._handleAgentMode(key);
+        break;
+      case MODE.LLM:
+        await this._handleLlmMode(key);
+        break;
+      case MODE.SHELL:
+        await this._handleShellMode(key);
         break;
     }
     
@@ -136,6 +146,18 @@ export class Repl {
     // : - enter CMD mode
     if (key.type === 'char' && key.key === ':') {
       this.mode.toCmd();
+      return;
+    }
+    
+    // @ - enter LLM mode
+    if (key.type === 'char' && key.key === '@') {
+      this.mode.toLlm();
+      return;
+    }
+    
+    // ! - enter SHELL mode
+    if (key.type === 'char' && key.key === '!') {
+      this.mode.toShell();
       return;
     }
     
@@ -416,6 +438,128 @@ export class Repl {
   }
   
   /**
+   * Handle LLM mode input
+   * Single-line input, Enter submits to LLM shell command from config.yml
+   * Stays in LLM mode until ESC is pressed
+   * @private
+   */
+  async _handleLlmMode(key) {
+    // Escape - back to normal
+    if (key.type === 'special' && key.key === 'escape') {
+      this.mode.toNormal();
+      this.inlineBuffer = '';
+      return;
+    }
+    
+    // Enter - execute LLM shell command, stay in LLM mode
+    if (key.type === 'special' && key.key === 'enter') {
+      const userInput = this.mode.getBuffer();
+      if (userInput) {
+        const llmShell = await getLlmShellCommand();
+        if (llmShell) {
+          this._addOutput(`@ ${userInput}`);
+          
+          // Clear buffer before exec starts
+          this.mode.clearBuffer();
+          this.inlineBuffer = '';
+          this._render();
+          
+          // Pause stdin to allow child process to receive input
+          process.stdin.pause();
+          
+          try {
+            await executeLlmShell(llmShell, userInput, {
+              onStdout: (data) => this._addOutput(data.trim()),
+              onStderr: (data) => this._addOutput(data.trim())
+            });
+          } finally {
+            // Resume stdin for REPL input
+            process.stdin.resume();
+          }
+          
+          this._addOutput(''); // Visual break after command
+        } else {
+          this._addOutput('Error: llm_shell not configured in config.yml');
+          // Clear buffer on error too
+          this.mode.clearBuffer();
+          this.inlineBuffer = '';
+        }
+      }
+      return;
+    }
+    
+    // Backspace
+    if (key.type === 'special' && key.key === 'backspace') {
+      this.mode.backspaceBuffer();
+      this.inlineBuffer = this.mode.getBuffer();
+      return;
+    }
+    
+    // Regular character - append to buffer
+    if (key.type === 'char') {
+      this.mode.appendBuffer(key.key);
+      this.inlineBuffer = this.mode.getBuffer();
+    }
+  }
+  
+  /**
+   * Handle SHELL mode input
+   * Single-line input, Enter executes as raw shell command
+   * Stays in SHELL mode until ESC is pressed
+   * @private
+   */
+  async _handleShellMode(key) {
+    // Escape - back to normal
+    if (key.type === 'special' && key.key === 'escape') {
+      this.mode.toNormal();
+      this.inlineBuffer = '';
+      return;
+    }
+    
+    // Enter - execute shell command, stay in SHELL mode
+    if (key.type === 'special' && key.key === 'enter') {
+      const command = this.mode.getBuffer();
+      if (command) {
+        this._addOutput(`! ${command}`);
+        
+        // Clear buffer before exec starts
+        this.mode.clearBuffer();
+        this.inlineBuffer = '';
+        this._render();
+        
+        // Pause stdin to allow child process to receive input
+        process.stdin.pause();
+        
+        try {
+          await executeShellDirect(command, {
+            onStdout: (data) => this._addOutput(data.trim()),
+            onStderr: (data) => this._addOutput(data.trim())
+          });
+        } finally {
+          // Resume stdin for REPL input
+          process.stdin.resume();
+        }
+        
+        this._addOutput(''); // Visual break after command
+      }
+      return;
+    }
+    
+    // Backspace
+    if (key.type === 'special' && key.key === 'backspace') {
+      this.mode.backspaceBuffer();
+      this.inlineBuffer = this.mode.getBuffer();
+      return;
+    }
+    
+    // Regular character - append to buffer
+    if (key.type === 'char') {
+      this.mode.appendBuffer(key.key);
+      this.inlineBuffer = this.mode.getBuffer();
+    }
+  }
+  
+  /**
    * Commit input value to variable
    * @private
    */
@@ -673,9 +817,12 @@ export class Repl {
   
   /**
    * Clear screen and scrollback buffer
+   * Also truncates buffer.log
    * @private
    */
-  _clearScreen() {
+  async _clearScreen() {
+    // Clear buffer.log
+    await clearBuffer();
     // Clear scrollback: ESC[3J clears scrollback, ESC[2J clears screen, ESC[H moves to home
     process.stdout.write('\x1b[3J\x1b[2J\x1b[H');
     // Re-initialize terminal with scroll region

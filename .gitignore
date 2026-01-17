@@ -3,3 +3,4 @@ node_modules/
 docs/PROMPT.md
 activity/*.yml
 activity/*.yaml
+buffer.log

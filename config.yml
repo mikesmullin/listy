@@ -1,0 +1,6 @@
+# Global configuration for Mari REPL
+
+# Command executed when submitting input in LLM mode (@)
+# $* is replaced with the user's input string
+# $_BUFFER is the path to buffer.log (scrollback capture)
+llm_shell: cat $_BUFFER | subd -t text "$*"

@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'child_process';
 import { substitute } from '../utils/template.js';
 import { formatValue } from '../config/variables.js';
 import { store } from './store.js';
+import { appendToBuffer, getBufferPath } from '../config/loader.js';
 
 /**
  * Execute a shell command with full stdio forwarding
@@ -35,6 +36,7 @@ export async function execute(command, options = {}) {
 
 /**
  * Execute a shell command and capture output (non-interactive)
+ * Also appends output to buffer.log for LLM context
  * @param {string} command - Command string to execute
  * @param {object} options - Execution options
  * @returns {Promise<{code: number, stdout: string, stderr: string}>}
@@ -53,16 +55,22 @@ export async function executeCapture(command, options = {}) {
     let stderr = '';
     
     proc.stdout.on('data', (data) => {
-      stdout += data.toString();
+      const text = data.toString();
+      stdout += text;
+      // Append to buffer.log
+      appendToBuffer(text);
       if (options.onStdout) {
-        options.onStdout(data.toString());
+        options.onStdout(text);
       }
     });
     
     proc.stderr.on('data', (data) => {
-      stderr += data.toString();
+      const text = data.toString();
+      stderr += text;
+      // Append to buffer.log
+      appendToBuffer(text);
       if (options.onStderr) {
-        options.onStderr(data.toString());
+        options.onStderr(text);
       }
     });
     
@@ -160,4 +168,38 @@ export function getCommandKeys() {
  */
 export function isCommandKey(key) {
   return getCommandTemplate(key) !== null;
+}
+
+/**
+ * Execute an LLM shell command with user input substitution
+ * Replaces $* with user input and $_BUFFER with buffer.log path
+ * @param {string} template - LLM shell command template from config.yml
+ * @param {string} userInput - User's input string
+ * @param {object} options - Execution options
+ * @returns {Promise<{code: number, stdout: string, stderr: string, command: string}>}
+ */
+export async function executeLlmShell(template, userInput, options = {}) {
+  // Get buffer path
+  const bufferPath = getBufferPath();
+  
+  // Substitute $_BUFFER and $* in the template
+  let command = template;
+  command = command.replace(/\$_BUFFER\b/g, bufferPath);
+  command = command.replace(/\$\{_BUFFER\}/g, bufferPath);
+  command = command.replace(/\$\*/g, userInput);
+  
+  // Execute and capture output
+  const result = await executeCapture(command, options);
+  return { ...result, command };
+}
+
+/**
+ * Execute a raw shell command (for SHELL mode)
+ * @param {string} command - Raw shell command
+ * @param {object} options - Execution options
+ * @returns {Promise<{code: number, stdout: string, stderr: string, command: string}>}
+ */
+export async function executeShellDirect(command, options = {}) {
+  const result = await executeCapture(command, options);
+  return { ...result, command };
 }
