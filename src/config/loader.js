@@ -63,6 +63,15 @@ export async function getLlmShellCommand() {
 }
 
 /**
+ * Get the default agent from config
+ * @returns {Promise<string>} Default agent name
+ */
+export async function getDefaultAgent() {
+  const config = await loadGlobalConfig();
+  return config.default_agent || 'text';
+}
+
+/**
  * Initialize the buffer log file
  * Creates or truncates buffer.log
  */

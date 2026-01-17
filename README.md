@@ -69,6 +69,7 @@ listy <command> [args...]
 ### LLM Mode
 - Type your prompt, `Enter` to submit (stays in LLM mode)
 - `Escape` - Exit to NORMAL mode
+- `@agent` prefix - Specify agent (e.g., `@solo what is 2+2?` sets `$_AGENT=solo`)
 
 The prompt is sent to the command configured in `config.yml`. The scrollback buffer (`buffer.log`) is available as context via `$_BUFFER`.
 
@@ -84,7 +85,10 @@ Create `config.yml` in the project root for global settings:
 # Command executed when submitting input in LLM mode (@)
 # $* is replaced with the user's input string
 # $_BUFFER is the path to buffer.log (scrollback capture)
-llm_shell: cat $_BUFFER | subd -v -t text "$*"
+# $_AGENT is the agent name, parsed from @agent prefix or default_agent
+#   e.g. input "@solo what is 2+2?" sets $_AGENT=solo, $*="what is 2+2?"
+default_agent: text
+llm_shell: cat $_BUFFER | subd -t "$_AGENT" "$*"
 ```
 
 ### Buffer Logging

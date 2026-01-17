@@ -10,7 +10,7 @@ import { JogWheelHandler } from './jog.js';
 import { store } from '../commands/store.js';
 import { executeCommand, executeTemplate, isCommandKey, getCommandTemplate, executeLlmShell, executeShellDirect } from '../commands/executor.js';
 import { parseValue, incrementValue, decrementValue, formatValue } from '../config/variables.js';
-import { persistVariableValues, loadActivities, initBuffer, clearBuffer, closeBuffer, getLlmShellCommand } from '../config/loader.js';
+import { persistVariableValues, loadActivities, initBuffer, clearBuffer, closeBuffer, getLlmShellCommand, getDefaultAgent } from '../config/loader.js';
 
 /**
  * REPL class
@@ -457,6 +457,15 @@ export class Repl {
       if (userInput) {
         const llmShell = await getLlmShellCommand();
         if (llmShell) {
+          // Parse @agent prefix if present
+          let agent = await getDefaultAgent();
+          let prompt = userInput;
+          const agentMatch = userInput.match(/^@(\w+)\s+/);
+          if (agentMatch) {
+            agent = agentMatch[1];
+            prompt = userInput.slice(agentMatch[0].length);
+          }
+          
           this._addOutput(`@ ${userInput}`);
           
           // Clear buffer before exec starts
@@ -468,7 +477,7 @@ export class Repl {
           process.stdin.pause();
           
           try {
-            await executeLlmShell(llmShell, userInput, {
+            await executeLlmShell(llmShell, prompt, agent, {
               onStdout: (data) => this._addOutput(data.trim()),
               onStderr: (data) => this._addOutput(data.trim())
             });

@@ -172,20 +172,23 @@ export function isCommandKey(key) {
 
 /**
  * Execute an LLM shell command with user input substitution
- * Replaces $* with user input and $_BUFFER with buffer.log path
+ * Replaces $* with user input, $_BUFFER with buffer.log path, and $_AGENT with agent name
  * @param {string} template - LLM shell command template from config.yml
  * @param {string} userInput - User's input string
+ * @param {string} agent - Agent name (from @agent prefix or default)
  * @param {object} options - Execution options
  * @returns {Promise<{code: number, stdout: string, stderr: string, command: string}>}
  */
-export async function executeLlmShell(template, userInput, options = {}) {
+export async function executeLlmShell(template, userInput, agent, options = {}) {
   // Get buffer path
   const bufferPath = getBufferPath();
   
-  // Substitute $_BUFFER and $* in the template
+  // Substitute $_BUFFER, $_AGENT, and $* in the template
   let command = template;
   command = command.replace(/\$_BUFFER\b/g, bufferPath);
   command = command.replace(/\$\{_BUFFER\}/g, bufferPath);
+  command = command.replace(/\$_AGENT\b/g, agent);
+  command = command.replace(/\$\{_AGENT\}/g, agent);
   command = command.replace(/\$\*/g, userInput);
   
   // Execute and capture output

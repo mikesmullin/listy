@@ -3,4 +3,7 @@
 # Command executed when submitting input in LLM mode (@)
 # $* is replaced with the user's input string
 # $_BUFFER is the path to buffer.log (scrollback capture)
-llm_shell: cat $_BUFFER | subd -t text "$*"
+# $_AGENT is the agent name, parsed from @agent prefix or default_agent if not specified
+#   e.g. input "@solo what is 2+2?" sets $_AGENT=solo, $*="what is 2+2?"
+default_agent: text
+llm_shell: cat $_BUFFER | subd -t "$_AGENT" "$*"
