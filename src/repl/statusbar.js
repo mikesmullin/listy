@@ -18,8 +18,56 @@ const FG_CYAN = `${ESC}[36m`;
 const FG_YELLOW = `${ESC}[33m`;
 const FG_GREEN = `${ESC}[32m`;
 const FG_MAGENTA = `${ESC}[35m`;
+const FG_BLUE = `${ESC}[34m`;
 const BG_BLUE = `${ESC}[44m`;
 const BG_BLACK = `${ESC}[40m`;
+
+// Spinner animation frames
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+let spinnerIndex = 0;
+let spinnerInterval = null;
+let spinnerCallback = null;
+
+/**
+ * Start the spinner animation
+ * @param {function} onFrame - Callback to re-render on each frame
+ */
+export function startSpinner(onFrame) {
+  if (spinnerInterval) return; // Already running
+  spinnerCallback = onFrame;
+  spinnerIndex = 0;
+  spinnerInterval = setInterval(() => {
+    spinnerIndex = (spinnerIndex + 1) % SPINNER_FRAMES.length;
+    if (spinnerCallback) spinnerCallback();
+  }, 80);
+}
+
+/**
+ * Stop the spinner animation
+ */
+export function stopSpinner() {
+  if (spinnerInterval) {
+    clearInterval(spinnerInterval);
+    spinnerInterval = null;
+    spinnerCallback = null;
+  }
+}
+
+/**
+ * Check if spinner is active
+ * @returns {boolean} True if spinner is running
+ */
+export function isSpinnerActive() {
+  return spinnerInterval !== null;
+}
+
+/**
+ * Get current spinner frame
+ * @returns {string} Current spinner character with color
+ */
+export function getSpinnerFrame() {
+  return `${FG_CYAN}${SPINNER_FRAMES[spinnerIndex]}${RESET}`;
+}
 
 // Color name to ANSI code map
 const BG_COLORS = {
@@ -359,9 +407,17 @@ export function renderStatusbar(state) {
   // Calculate visible width (strip ANSI codes for width calculation)
   const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
   
-  // Left side: [activity] buffer█
-  const leftContent = `${activity} ${buffer}${cursor}`;
-  const leftWidth = stripAnsi(activity).length + 1 + buffer.length + 1;
+  // Left side: [activity] buffer█ or [activity] spinner (when loading)
+  let leftContent;
+  let leftWidth;
+  if (isSpinnerActive()) {
+    const spinner = getSpinnerFrame();
+    leftContent = `${activity} ${spinner}`;
+    leftWidth = stripAnsi(activity).length + 1 + 1; // activity + space + spinner char
+  } else {
+    leftContent = `${activity} ${buffer}${cursor}`;
+    leftWidth = stripAnsi(activity).length + 1 + buffer.length + 1;
+  }
   
   // Right side: context  mode
   const rightContent = context ? `${context}  ${mode}` : mode;

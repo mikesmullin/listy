@@ -5,7 +5,7 @@
 
 import { InputHandler, KEY } from './input.js';
 import { ModeStateMachine, MODE } from './modes.js';
-import { render, initTerminal, resetTerminal, printOutput, clearScreen, showCursor } from './statusbar.js';
+import { render, initTerminal, resetTerminal, printOutput, clearScreen, showCursor, startSpinner, stopSpinner } from './statusbar.js';
 import { JogWheelHandler } from './jog.js';
 import { store } from '../commands/store.js';
 import { executeCommand, executeTemplate, isCommandKey, getCommandTemplate, executeLlmShell, executeShellDirect } from '../commands/executor.js';
@@ -473,6 +473,9 @@ export class Repl {
           this.inlineBuffer = '';
           this._render();
           
+          // Start spinner
+          startSpinner(() => this._render());
+          
           // Pause stdin to allow child process to receive input
           process.stdin.pause();
           
@@ -482,7 +485,8 @@ export class Repl {
               onStderr: (data) => this._addOutput(data.trim())
             });
           } finally {
-            // Resume stdin for REPL input
+            // Stop spinner and resume stdin
+            stopSpinner();
             process.stdin.resume();
           }
           
@@ -536,6 +540,9 @@ export class Repl {
         this.inlineBuffer = '';
         this._render();
         
+        // Start spinner
+        startSpinner(() => this._render());
+        
         // Pause stdin to allow child process to receive input
         process.stdin.pause();
         
@@ -545,7 +552,8 @@ export class Repl {
             onStderr: (data) => this._addOutput(data.trim())
           });
         } finally {
-          // Resume stdin for REPL input
+          // Stop spinner and resume stdin
+          stopSpinner();
           process.stdin.resume();
         }
         
@@ -595,6 +603,9 @@ export class Repl {
     
     this._addOutput(`$ ${this._getExpandedCommand(template, input)}`);
     
+    // Start spinner
+    startSpinner(() => this._render());
+    
     // Pause stdin to allow child process to receive input
     process.stdin.pause();
     
@@ -604,7 +615,8 @@ export class Repl {
         onStderr: (data) => this._addOutput(data.trim())
       });
     } finally {
-      // Resume stdin for REPL input
+      // Stop spinner and resume stdin
+      stopSpinner();
       process.stdin.resume();
     }
     
@@ -625,6 +637,9 @@ export class Repl {
         
         this._addOutput(`$ ${this._getExpandedCommand(template, input)}`);
         
+        // Start spinner
+        startSpinner(() => this._render());
+        
         // Pause stdin to allow child process to receive input
         process.stdin.pause();
         
@@ -634,7 +649,8 @@ export class Repl {
             onStderr: (data) => this._addOutput(data.trim())
           });
         } finally {
-          // Resume stdin for REPL input
+          // Stop spinner and resume stdin
+          stopSpinner();
           process.stdin.resume();
         }
         
