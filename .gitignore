@@ -1,6 +1,7 @@
 /tmp/
 node_modules/
-docs/PROMPT.md
-activity/*.yml
-activity/*.yaml
-buffer.log
+/docs/PROMPT.md
+/activity/*.yml
+/activity/*.yaml
+/buffer.log
+/PROMPT.md

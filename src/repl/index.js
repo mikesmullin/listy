@@ -5,6 +5,7 @@
 
 import { InputHandler, KEY } from './input.js';
 import { ModeStateMachine, MODE } from './modes.js';
+import { HistoryManager } from './history.js';
 import { render, initTerminal, resetTerminal, printOutput, clearScreen, showCursor, startSpinner, stopSpinner } from './statusbar.js';
 import { JogWheelHandler } from './jog.js';
 import { store } from '../commands/store.js';
@@ -21,6 +22,7 @@ export class Repl {
     this.input = new InputHandler();
     this.mode = new ModeStateMachine();
     this.jog = new JogWheelHandler();
+    this.history = new HistoryManager();
     this.running = false;
     this.inlineBuffer = ''; // Full inline composition buffer
     this.inputValue = ''; // Current value being typed for a variable
@@ -257,14 +259,44 @@ export class Repl {
   async _handleCmdMode(key) {
     // Escape - back to normal
     if (key.type === 'special' && key.key === 'escape') {
+      this.history.resetNavigation('CMD');
       this.mode.toNormal();
       return;
     }
     
     // Enter - execute command
     if (key.type === 'special' && key.key === 'enter') {
-      await this._executeCmdCommand(this.mode.getBuffer());
+      const buffer = this.mode.getBuffer();
+      if (buffer) {
+        this.history.add('CMD', buffer);
+      }
+      this.history.resetNavigation('CMD');
+      await this._executeCmdCommand(buffer);
       this.mode.toNormal();
+      return;
+    }
+    
+    // Arrow up - navigate history (older)
+    if (key.type === 'arrow' && key.key === 'up') {
+      const entry = this.history.navigateUp('CMD', this.mode.getBuffer());
+      if (entry !== null) {
+        this.mode.clearBuffer();
+        for (const ch of entry) {
+          this.mode.appendBuffer(ch);
+        }
+      }
+      return;
+    }
+    
+    // Arrow down - navigate history (newer)
+    if (key.type === 'arrow' && key.key === 'down') {
+      const entry = this.history.navigateDown('CMD');
+      if (entry !== null) {
+        this.mode.clearBuffer();
+        for (const ch of entry) {
+          this.mode.appendBuffer(ch);
+        }
+      }
       return;
     }
     
@@ -472,6 +504,7 @@ export class Repl {
   async _handleLlmMode(key) {
     // Escape - back to normal
     if (key.type === 'special' && key.key === 'escape') {
+      this.history.resetNavigation('LLM');
       this.mode.toNormal();
       this.inlineBuffer = '';
       return;
@@ -481,6 +514,10 @@ export class Repl {
     if (key.type === 'special' && key.key === 'enter') {
       const userInput = this.mode.getBuffer();
       if (userInput) {
+        // Add to history before execution
+        this.history.add('LLM', userInput);
+        this.history.resetNavigation('LLM');
+        
         const llmShell = await getLlmShellCommand();
         if (llmShell) {
           // Parse @agent prefix if present
@@ -524,6 +561,32 @@ export class Repl {
       return;
     }
     
+    // Arrow up - navigate history (older)
+    if (key.type === 'arrow' && key.key === 'up') {
+      const entry = this.history.navigateUp('LLM', this.mode.getBuffer());
+      if (entry !== null) {
+        this.mode.clearBuffer();
+        for (const ch of entry) {
+          this.mode.appendBuffer(ch);
+        }
+        this.inlineBuffer = this.mode.getBuffer();
+      }
+      return;
+    }
+    
+    // Arrow down - navigate history (newer)
+    if (key.type === 'arrow' && key.key === 'down') {
+      const entry = this.history.navigateDown('LLM');
+      if (entry !== null) {
+        this.mode.clearBuffer();
+        for (const ch of entry) {
+          this.mode.appendBuffer(ch);
+        }
+        this.inlineBuffer = this.mode.getBuffer();
+      }
+      return;
+    }
+    
     // Backspace
     if (key.type === 'special' && key.key === 'backspace') {
       this.mode.backspaceBuffer();
@@ -547,6 +610,7 @@ export class Repl {
   async _handleShellMode(key) {
     // Escape - back to normal
     if (key.type === 'special' && key.key === 'escape') {
+      this.history.resetNavigation('SHELL');
       this.mode.toNormal();
       this.inlineBuffer = '';
       return;
@@ -556,6 +620,10 @@ export class Repl {
     if (key.type === 'special' && key.key === 'enter') {
       const command = this.mode.getBuffer();
       if (command) {
+        // Add to history before execution
+        this.history.add('SHELL', command);
+        this.history.resetNavigation('SHELL');
+        
         this._addOutput(`! ${command}`);
         
         // Clear buffer before exec starts
@@ -578,6 +646,32 @@ export class Repl {
         }
         
         this._addOutput(''); // Visual break after command
+      }
+      return;
+    }
+    
+    // Arrow up - navigate history (older)
+    if (key.type === 'arrow' && key.key === 'up') {
+      const entry = this.history.navigateUp('SHELL', this.mode.getBuffer());
+      if (entry !== null) {
+        this.mode.clearBuffer();
+        for (const ch of entry) {
+          this.mode.appendBuffer(ch);
+        }
+        this.inlineBuffer = this.mode.getBuffer();
+      }
+      return;
+    }
+    
+    // Arrow down - navigate history (newer)
+    if (key.type === 'arrow' && key.key === 'down') {
+      const entry = this.history.navigateDown('SHELL');
+      if (entry !== null) {
+        this.mode.clearBuffer();
+        for (const ch of entry) {
+          this.mode.appendBuffer(ch);
+        }
+        this.inlineBuffer = this.mode.getBuffer();
       }
       return;
     }
