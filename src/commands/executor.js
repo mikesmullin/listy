@@ -8,6 +8,7 @@ import { substitute } from '../utils/template.js';
 import { formatValue } from '../config/variables.js';
 import { store } from './store.js';
 import { appendToBuffer, getBufferPath } from '../config/loader.js';
+import { registerChildProcess, unregisterChildProcess } from './signal.js';
 
 /**
  * Execute a shell command with full stdio forwarding
@@ -51,6 +52,9 @@ export async function executeCapture(command, options = {}) {
       }
     });
     
+    // Register child process for signal handling (Ctrl+C escalation)
+    registerChildProcess(proc, options.onParentExit);
+    
     let stdout = '';
     let stderr = '';
     
@@ -75,10 +79,14 @@ export async function executeCapture(command, options = {}) {
     });
     
     proc.on('close', (code) => {
+      // Unregister child process and reset interrupt counter
+      unregisterChildProcess();
       resolve({ code: code || 0, stdout, stderr });
     });
     
     proc.on('error', (err) => {
+      // Unregister child process on error too
+      unregisterChildProcess();
       resolve({ code: 1, stdout, stderr: err.message });
     });
   });

@@ -11,6 +11,7 @@ import { store } from '../commands/store.js';
 import { executeCommand, executeTemplate, isCommandKey, getCommandTemplate, executeLlmShell, executeShellDirect } from '../commands/executor.js';
 import { parseValue, incrementValue, decrementValue, formatValue } from '../config/variables.js';
 import { persistVariableValues, loadActivities, initBuffer, clearBuffer, closeBuffer, getLlmShellCommand, getDefaultAgent } from '../config/loader.js';
+import { handleInterrupt } from '../commands/signal.js';
 
 /**
  * REPL class
@@ -69,14 +70,39 @@ export class Repl {
   }
   
   /**
+   * Emergency cleanup before forced exit (called on 3rd Ctrl+C)
+   * Does minimal synchronous cleanup to restore terminal state
+   * @private
+   */
+  _emergencyCleanup() {
+    try {
+      stopSpinner();
+      resetTerminal();
+      process.stdout.write(showCursor());
+    } catch (e) {
+      // Ignore errors during emergency cleanup
+    }
+  }
+  
+  /**
    * Handle key press
    * @private
    */
   async _handleKey(key) {
     if (!this.running) return;
     
-    // Global: Ctrl+C / Ctrl+D to exit
-    if (key.type === 'ctrl' && (key.key === 'c' || key.key === 'd')) {
+    // Global: Ctrl+C - check if child process is running first
+    if (key.type === 'ctrl' && key.key === 'c') {
+      // handleInterrupt returns true if a child process was running and it handled the signal
+      if (!handleInterrupt()) {
+        // No child process, exit normally
+        this.stop();
+      }
+      return;
+    }
+    
+    // Global: Ctrl+D to exit
+    if (key.type === 'ctrl' && key.key === 'd') {
       this.stop();
       return;
     }
@@ -476,18 +502,15 @@ export class Repl {
           // Start spinner
           startSpinner(() => this._render());
           
-          // Pause stdin to allow child process to receive input
-          process.stdin.pause();
-          
           try {
             await executeLlmShell(llmShell, prompt, agent, {
               onStdout: (data) => this._addOutput(data.trim()),
-              onStderr: (data) => this._addOutput(data.trim())
+              onStderr: (data) => this._addOutput(data.trim()),
+              onParentExit: () => this._emergencyCleanup()
             });
           } finally {
-            // Stop spinner and resume stdin
+            // Stop spinner
             stopSpinner();
-            process.stdin.resume();
           }
           
           this._addOutput(''); // Visual break after command
@@ -543,18 +566,15 @@ export class Repl {
         // Start spinner
         startSpinner(() => this._render());
         
-        // Pause stdin to allow child process to receive input
-        process.stdin.pause();
-        
         try {
           await executeShellDirect(command, {
             onStdout: (data) => this._addOutput(data.trim()),
-            onStderr: (data) => this._addOutput(data.trim())
+            onStderr: (data) => this._addOutput(data.trim()),
+            onParentExit: () => this._emergencyCleanup()
           });
         } finally {
-          // Stop spinner and resume stdin
+          // Stop spinner
           stopSpinner();
-          process.stdin.resume();
         }
         
         this._addOutput(''); // Visual break after command
@@ -606,18 +626,15 @@ export class Repl {
     // Start spinner
     startSpinner(() => this._render());
     
-    // Pause stdin to allow child process to receive input
-    process.stdin.pause();
-    
     try {
       const result = await executeCommand(key, input, {
         onStdout: (data) => this._addOutput(data.trim()),
-        onStderr: (data) => this._addOutput(data.trim())
+        onStderr: (data) => this._addOutput(data.trim()),
+        onParentExit: () => this._emergencyCleanup()
       });
     } finally {
-      // Stop spinner and resume stdin
+      // Stop spinner
       stopSpinner();
-      process.stdin.resume();
     }
     
     this._addOutput(''); // Visual break after command
@@ -640,18 +657,15 @@ export class Repl {
         // Start spinner
         startSpinner(() => this._render());
         
-        // Pause stdin to allow child process to receive input
-        process.stdin.pause();
-        
         try {
           await executeCommand(prefix, input, {
             onStdout: (data) => this._addOutput(data.trim()),
-            onStderr: (data) => this._addOutput(data.trim())
+            onStderr: (data) => this._addOutput(data.trim()),
+            onParentExit: () => this._emergencyCleanup()
           });
         } finally {
-          // Stop spinner and resume stdin
+          // Stop spinner
           stopSpinner();
-          process.stdin.resume();
         }
         
         this._addOutput(''); // Visual break after command
