@@ -7,3 +7,8 @@
 #   e.g. input "@solo what is 2+2?" sets $_AGENT=solo, $*="what is 2+2?"
 default_agent: text
 llm_shell: cat $_BUFFER | subd -t "$_AGENT" "$*"
+
+# Flash message timing: milliseconds per character
+# A 50-character message will display for (50 * flash_ms_per_char) milliseconds
+# Default: 40 (so 50 chars = 2000ms)
+flash_ms_per_char: 40

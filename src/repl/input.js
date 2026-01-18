@@ -21,6 +21,7 @@ export const KEY = {
   CTRL_C: '\x03',
   CTRL_D: '\x04',
   CTRL_L: '\x0c',
+  CTRL_X: '\x18',
 };
 
 /**
@@ -40,6 +41,9 @@ export function parseKey(data) {
   }
   if (str === KEY.CTRL_L) {
     return { type: 'ctrl', key: 'l', raw: str };
+  }
+  if (str === KEY.CTRL_X) {
+    return { type: 'ctrl', key: 'x', raw: str };
   }
   
   // Special keys

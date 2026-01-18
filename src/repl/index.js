@@ -6,12 +6,12 @@
 import { InputHandler, KEY } from './input.js';
 import { ModeStateMachine, MODE } from './modes.js';
 import { HistoryManager } from './history.js';
-import { render, initTerminal, resetTerminal, printOutput, clearScreen, showCursor, startSpinner, stopSpinner } from './statusbar.js';
+import { render, initTerminal, resetTerminal, printOutput, clearScreen, showCursor, startSpinner, stopSpinner, showFlashMessage, setFlashTiming, eraseLines } from './statusbar.js';
 import { JogWheelHandler } from './jog.js';
 import { store } from '../commands/store.js';
 import { executeCommand, executeTemplate, isCommandKey, getCommandTemplate, executeLlmShell, executeShellDirect } from '../commands/executor.js';
 import { parseValue, incrementValue, decrementValue, formatValue } from '../config/variables.js';
-import { persistVariableValues, loadActivities, initBuffer, clearBuffer, closeBuffer, getLlmShellCommand, getDefaultAgent } from '../config/loader.js';
+import { persistVariableValues, loadActivities, initBuffer, clearBuffer, closeBuffer, getLlmShellCommand, getDefaultAgent, getFlashMsPerChar, startRound, endRound, undoLastRound, getRoundCount, addLinesToCurrentRound } from '../config/loader.js';
 import { handleInterrupt } from '../commands/signal.js';
 
 /**
@@ -27,6 +27,7 @@ export class Repl {
     this.inlineBuffer = ''; // Full inline composition buffer
     this.inputValue = ''; // Current value being typed for a variable
     this.originalValues = null; // Snapshot of values when entering VAR EDIT mode
+    this.awaitingCtrlXCombo = false; // Flag for Ctrl+X prefix detection
   }
   
   /**
@@ -37,6 +38,10 @@ export class Repl {
     
     // Initialize buffer.log for scrollback capture
     await initBuffer();
+    
+    // Initialize flash message timing from config
+    const flashMsPerChar = await getFlashMsPerChar();
+    setFlashTiming(flashMsPerChar);
     
     // Set up input handlers
     this.input.onKey(this._handleKey.bind(this));
@@ -93,6 +98,29 @@ export class Repl {
   async _handleKey(key) {
     if (!this.running) return;
     
+    // Global: Handle Ctrl+X combo system
+    // Ctrl+X is a prefix for global hotkey combos that work in all modes
+    if (this.awaitingCtrlXCombo) {
+      this.awaitingCtrlXCombo = false;
+      // Handle Ctrl+X, <key> combos
+      if (key.type === 'char') {
+        const handled = await this._handleCtrlXCombo(key.key);
+        if (handled) {
+          this._render();
+          return;
+        }
+      }
+      // If no valid combo, ignore the second key
+      this._render();
+      return;
+    }
+    
+    // Global: Ctrl+X - start combo sequence
+    if (key.type === 'ctrl' && key.key === 'x') {
+      this.awaitingCtrlXCombo = true;
+      return;
+    }
+    
     // Global: Ctrl+C - check if child process is running first
     if (key.type === 'ctrl' && key.key === 'c') {
       // handleInterrupt returns true if a child process was running and it handled the signal
@@ -138,6 +166,51 @@ export class Repl {
     }
     
     this._render();
+  }
+  
+  /**
+   * Handle Ctrl+X combo hotkeys (global, works in all modes)
+   * @param {string} key - The key pressed after Ctrl+X
+   * @returns {boolean} True if combo was handled
+   * @private
+   */
+  async _handleCtrlXCombo(key) {
+    switch (key) {
+      case 'u':
+        // Ctrl+X, u: Undo last round
+        await this._undoLastRound();
+        return true;
+      default:
+        return false;
+    }
+  }
+  
+  /**
+   * Undo the last execution round
+   * Removes it from memory and rewrites buffer.log
+   * @private
+   */
+  async _undoLastRound() {
+    const count = getRoundCount();
+    if (count === 0) {
+      // Show flash message for no rounds
+      showFlashMessage('No rounds to undo', () => this._render());
+      return;
+    }
+    
+    const result = await undoLastRound();
+    if (result) {
+      const { round, linesToErase } = result;
+      
+      // Erase the cumulative lines from the screen
+      eraseLines(linesToErase, this._getState());
+      
+      // Show flash message with undo confirmation
+      const cmd = round.command || '(empty)';
+      // Truncate command if too long
+      const displayCmd = cmd.length > 40 ? cmd.slice(0, 37) + '...' : cmd;
+      showFlashMessage(`Undid: ${displayCmd}`, () => this._render());
+    }
   }
   
   /**
@@ -529,7 +602,12 @@ export class Repl {
             prompt = userInput.slice(agentMatch[0].length);
           }
           
-          this._addOutput(`@ ${userInput}`);
+          const displayCommand = `@ ${userInput}`;
+          
+          // Start a new round for this execution
+          startRound(displayCommand);
+          
+          this._addOutput(displayCommand);
           
           // Clear buffer before exec starts
           this.mode.clearBuffer();
@@ -548,6 +626,8 @@ export class Repl {
           } finally {
             // Stop spinner
             stopSpinner();
+            // End the round
+            endRound();
           }
           
           this._addOutput(''); // Visual break after command
@@ -624,7 +704,12 @@ export class Repl {
         this.history.add('SHELL', command);
         this.history.resetNavigation('SHELL');
         
-        this._addOutput(`! ${command}`);
+        const displayCommand = `! ${command}`;
+        
+        // Start a new round for this execution
+        startRound(displayCommand);
+        
+        this._addOutput(displayCommand);
         
         // Clear buffer before exec starts
         this.mode.clearBuffer();
@@ -643,6 +728,8 @@ export class Repl {
         } finally {
           // Stop spinner
           stopSpinner();
+          // End the round
+          endRound();
         }
         
         this._addOutput(''); // Visual break after command
@@ -715,7 +802,12 @@ export class Repl {
     const needsInput = template.includes('$INPUT');
     const input = needsInput ? this._extractInput() : '';
     
-    this._addOutput(`$ ${this._getExpandedCommand(template, input)}`);
+    const expandedCommand = `$ ${this._getExpandedCommand(template, input)}`;
+    
+    // Start a new round for this execution
+    startRound(expandedCommand);
+    
+    this._addOutput(expandedCommand);
     
     // Start spinner
     startSpinner(() => this._render());
@@ -729,6 +821,8 @@ export class Repl {
     } finally {
       // Stop spinner
       stopSpinner();
+      // End the round
+      endRound();
     }
     
     this._addOutput(''); // Visual break after command
@@ -746,7 +840,12 @@ export class Repl {
         const input = buffer.slice(len);
         const template = getCommandTemplate(prefix);
         
-        this._addOutput(`$ ${this._getExpandedCommand(template, input)}`);
+        const expandedCommand = `$ ${this._getExpandedCommand(template, input)}`;
+        
+        // Start a new round for this execution
+        startRound(expandedCommand);
+        
+        this._addOutput(expandedCommand);
         
         // Start spinner
         startSpinner(() => this._render());
@@ -760,6 +859,8 @@ export class Repl {
         } finally {
           // Stop spinner
           stopSpinner();
+          // End the round
+          endRound();
         }
         
         this._addOutput(''); // Visual break after command
@@ -910,10 +1011,15 @@ export class Repl {
   
   /**
    * Add output line - prints to terminal and refreshes status bar
+   * Also tracks line count for the current round (for undo)
    * @private
    */
   _addOutput(line) {
     printOutput(line, this._getState());
+    // Track line count for current round (each _addOutput is one line)
+    // Count actual newlines in the line plus 1 for the line itself
+    const newlineCount = (line.match(/\n/g) || []).length;
+    addLinesToCurrentRound(1 + newlineCount);
   }
   
   /**

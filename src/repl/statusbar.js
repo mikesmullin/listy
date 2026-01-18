@@ -69,6 +69,84 @@ export function getSpinnerFrame() {
   return `${FG_CYAN}${SPINNER_FRAMES[spinnerIndex]}${RESET}`;
 }
 
+// Flash message state
+let flashMessage = null;
+let flashTimeout = null;
+let flashCallback = null;
+
+// Default: 50 chars = 2000ms, so 40ms per char
+const DEFAULT_FLASH_MS_PER_CHAR = 40;
+let flashMsPerChar = DEFAULT_FLASH_MS_PER_CHAR;
+
+/**
+ * Set the flash message timing factor
+ * @param {number} msPerChar - Milliseconds per character
+ */
+export function setFlashTiming(msPerChar) {
+  flashMsPerChar = msPerChar || DEFAULT_FLASH_MS_PER_CHAR;
+}
+
+/**
+ * Show a temporary flash message in the status bar
+ * @param {string} message - Message to display
+ * @param {function} onComplete - Callback when flash ends (to re-render)
+ * @param {number} durationOverride - Optional fixed duration in ms
+ */
+export function showFlashMessage(message, onComplete, durationOverride = null) {
+  // Clear any existing flash
+  if (flashTimeout) {
+    clearTimeout(flashTimeout);
+  }
+  
+  flashMessage = message;
+  flashCallback = onComplete;
+  
+  // Calculate duration based on message length
+  const duration = durationOverride || Math.max(1000, message.length * flashMsPerChar);
+  
+  flashTimeout = setTimeout(() => {
+    flashMessage = null;
+    flashTimeout = null;
+    if (flashCallback) {
+      flashCallback();
+      flashCallback = null;
+    }
+  }, duration);
+  
+  // Trigger immediate re-render via callback
+  if (onComplete) {
+    onComplete();
+  }
+}
+
+/**
+ * Check if a flash message is active
+ * @returns {boolean} True if flash message is showing
+ */
+export function isFlashActive() {
+  return flashMessage !== null;
+}
+
+/**
+ * Get the current flash message
+ * @returns {string|null} The flash message or null
+ */
+export function getFlashMessage() {
+  return flashMessage;
+}
+
+/**
+ * Clear any active flash message
+ */
+export function clearFlashMessage() {
+  if (flashTimeout) {
+    clearTimeout(flashTimeout);
+    flashTimeout = null;
+  }
+  flashMessage = null;
+  flashCallback = null;
+}
+
 // Color name to ANSI code map
 const BG_COLORS = {
   black: `${ESC}[40m`,
@@ -407,10 +485,15 @@ export function renderStatusbar(state) {
   // Calculate visible width (strip ANSI codes for width calculation)
   const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
   
-  // Left side: [activity] buffer█ or [activity] spinner (when loading)
+  // Left side: [activity] buffer█ or [activity] spinner or [activity] flash message
   let leftContent;
   let leftWidth;
-  if (isSpinnerActive()) {
+  if (isFlashActive()) {
+    // Show flash message in place of buffer
+    const flash = `${DIM}${getFlashMessage()}${RESET}`;
+    leftContent = `${activity} ${flash}`;
+    leftWidth = stripAnsi(activity).length + 1 + getFlashMessage().length;
+  } else if (isSpinnerActive()) {
     const spinner = getSpinnerFrame();
     leftContent = `${activity} ${spinner}`;
     leftWidth = stripAnsi(activity).length + 1 + 1; // activity + space + spinner char
@@ -597,5 +680,47 @@ export function printOutput(text, state) {
  */
 export function render(state, output = []) {
   // Just update status bar - output is handled separately via printOutput
+  renderStatusOnly(state);
+}
+
+/**
+ * Erase N lines from the scroll region (from the bottom up)
+ * Used to remove output when undoing a round
+ * @param {number} lineCount - Number of lines to erase
+ * @param {object} state - Current state for status bar redraw
+ */
+export function eraseLines(lineCount, state) {
+  if (lineCount <= 0) return;
+  
+  const { rows } = getTermSize();
+  const statusHeight = getStatusHeight(state);
+  const scrollBottom = rows - statusHeight;
+  
+  let out = '';
+  out += hideCursor();
+  out += saveCursor();
+  
+  // Move to the bottom of the scroll region
+  out += moveTo(scrollBottom, 1);
+  
+  // Move up and clear each line
+  // We use reverse index (scroll down) to push content up, effectively erasing from bottom
+  for (let i = 0; i < lineCount; i++) {
+    // Move cursor up one line and clear it
+    out += moveUp(1);
+    out += clearLine();
+  }
+  
+  // Alternative approach: use delete line escape sequence
+  // ESC[M deletes the line at cursor, scrolling lines below up
+  // But we want to delete from bottom, so we position at bottom of scroll region
+  // and use ESC[<n>M to delete n lines
+  
+  out += restoreCursor();
+  out += showCursor();
+  
+  process.stdout.write(out);
+  
+  // Redraw status bar
   renderStatusOnly(state);
 }

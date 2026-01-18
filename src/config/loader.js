@@ -11,25 +11,27 @@ import { parseYaml, stringifyYaml } from '../utils/yaml.js';
 import { validateActivity, getDefaultActivity } from './schema.js';
 import { getDefaultValue } from './variables.js';
 
+// Re-export buffer functions from the buffer manager module
+export {
+  getBufferPath,
+  initBuffer,
+  appendToBuffer,
+  clearBuffer,
+  closeBuffer,
+  startRound,
+  endRound,
+  undoLastRound,
+  getRoundCount,
+  addLinesToCurrentRound
+} from '../repl/buffer.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..');
 const ACTIVITY_DIR = join(PROJECT_ROOT, 'activity');
 const CONFIG_FILE = join(PROJECT_ROOT, 'config.yml');
-const BUFFER_FILE = join(PROJECT_ROOT, 'buffer.log');
 
 // Global config cache
 let globalConfig = null;
-
-// Buffer write stream
-let bufferStream = null;
-
-/**
- * Get the path to buffer.log
- * @returns {string} Absolute path to buffer.log
- */
-export function getBufferPath() {
-  return BUFFER_FILE;
-}
 
 /**
  * Load global configuration from config.yml
@@ -72,51 +74,12 @@ export async function getDefaultAgent() {
 }
 
 /**
- * Initialize the buffer log file
- * Creates or truncates buffer.log
+ * Get the flash message timing factor from config
+ * @returns {Promise<number>} Milliseconds per character (default 40)
  */
-export async function initBuffer() {
-  try {
-    await writeFile(BUFFER_FILE, '', 'utf8');
-    bufferStream = createWriteStream(BUFFER_FILE, { flags: 'a' });
-  } catch (err) {
-    console.error('Error initializing buffer.log:', err.message);
-  }
-}
-
-/**
- * Append to the buffer log file
- * @param {string} data - Data to append
- */
-export function appendToBuffer(data) {
-  if (bufferStream) {
-    bufferStream.write(data);
-  }
-}
-
-/**
- * Clear the buffer log file (on Ctrl+L)
- */
-export async function clearBuffer() {
-  try {
-    if (bufferStream) {
-      bufferStream.end();
-    }
-    await writeFile(BUFFER_FILE, '', 'utf8');
-    bufferStream = createWriteStream(BUFFER_FILE, { flags: 'a' });
-  } catch (err) {
-    console.error('Error clearing buffer.log:', err.message);
-  }
-}
-
-/**
- * Close the buffer stream
- */
-export function closeBuffer() {
-  if (bufferStream) {
-    bufferStream.end();
-    bufferStream = null;
-  }
+export async function getFlashMsPerChar() {
+  const config = await loadGlobalConfig();
+  return config.flash_ms_per_char || 40;
 }
 
 /**

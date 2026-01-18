@@ -43,6 +43,12 @@ listy <command> [args...]
 
 ## Keyboard Shortcuts
 
+### Global Hotkeys
+These work in all modes:
+- `Ctrl+L` - Clear screen and buffer
+- `Ctrl+C` / `Ctrl+D` - Exit
+- `Ctrl+X, u` - Undo last execution round (removes from buffer)
+
 ### NORMAL Mode
 - `Tab` / `Shift+Tab` - Switch between activities
 - `:` - Enter CMD mode
@@ -50,8 +56,6 @@ listy <command> [args...]
 - `@` - Enter LLM mode
 - `!` - Enter SHELL mode
 - `?` - Show available commands
-- `Ctrl+L` - Clear screen and buffer
-- `Ctrl+C` / `Ctrl+D` - Exit
 
 ### VAR EDIT Mode
 - Variable hotkeys (e.g., `q`, `y`, `t`) - Select and edit variable (blanks input)
