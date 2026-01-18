@@ -28,6 +28,7 @@ export class Repl {
     this.inputValue = ''; // Current value being typed for a variable
     this.originalValues = null; // Snapshot of values when entering VAR EDIT mode
     this.awaitingCtrlXCombo = false; // Flag for Ctrl+X prefix detection
+    this.currentAgent = null; // Current agent override (persists until changed or process exits)
   }
   
   /**
@@ -593,14 +594,17 @@ export class Repl {
         
         const llmShell = await getLlmShellCommand();
         if (llmShell) {
-          // Parse @agent prefix if present
-          let agent = await getDefaultAgent();
+          // Parse @agent prefix if present (allows letters, numbers, hyphens, underscores)
           let prompt = userInput;
-          const agentMatch = userInput.match(/^@(\w+)\s+/);
+          const agentMatch = userInput.match(/^@([\w-]+)\s+/);
           if (agentMatch) {
-            agent = agentMatch[1];
+            // Update current agent (persists for future inputs)
+            this.currentAgent = agentMatch[1];
             prompt = userInput.slice(agentMatch[0].length);
           }
+          
+          // Use currentAgent if set, otherwise fall back to default_agent
+          const agent = this.currentAgent || await getDefaultAgent();
           
           const displayCommand = `@ ${userInput}`;
           
