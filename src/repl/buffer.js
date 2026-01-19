@@ -7,6 +7,7 @@ import { createWriteStream } from 'fs';
 import { writeFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { store } from '../commands/store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..');
@@ -263,12 +264,163 @@ class BufferManager {
       this.bufferStream = null;
     }
   }
+
+  /**
+   * Render all rounds as screen content ($_SCREEN)
+   * @returns {string} Formatted screen content
+   */
+  renderScreen() {
+    return this.rounds.map(r => r.render()).join('\n');
+  }
 }
 
 // Singleton instance
 export const bufferManager = new BufferManager();
 
-// Convenience exports for backwards compatibility and ease of use
+/**
+ * Match user input against activity skills patterns
+ * @param {string} userInput - User's LLM input
+ * @param {Array} skills - Array of skill objects with pattern and llm_prepend
+ * @returns {string} Concatenated llm_prepend from all matching skills
+ */
+function matchSkillsPatterns(userInput, skills) {
+  if (!skills || !Array.isArray(skills) || skills.length === 0) {
+    return '';
+  }
+
+  const matchedPrepends = [];
+
+  for (const skill of skills) {
+    if (!skill.pattern || !skill.llm_prepend) continue;
+
+    try {
+      // Create case-insensitive regex from pattern
+      const regex = new RegExp(skill.pattern, 'i');
+      if (regex.test(userInput)) {
+        matchedPrepends.push(skill.llm_prepend);
+      }
+    } catch (err) {
+      // Invalid regex pattern, skip
+      console.error(`Invalid skill pattern: ${skill.pattern}`);
+    }
+  }
+
+  return matchedPrepends.join('\n');
+}
+
+/**
+ * Expand activity variables in a template string
+ * @param {string} template - Template string with $VAR references
+ * @param {object} values - Variable name -> value mapping
+ * @returns {string} Expanded string
+ */
+function expandActivityVariables(template, values) {
+  if (!template || !values) return template || '';
+
+  let result = template;
+
+  // Replace ${VAR} syntax first
+  result = result.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, name) => {
+    if (values.hasOwnProperty(name)) {
+      const val = values[name];
+      return val !== undefined && val !== null ? String(val) : '';
+    }
+    return match;
+  });
+
+  // Replace $VAR syntax (word boundary) - for lowercase/camelCase variable names
+  result = result.replace(/\$([A-Za-z_][A-Za-z0-9_]*)\b/g, (match, name) => {
+    if (values.hasOwnProperty(name)) {
+      const val = values[name];
+      return val !== undefined && val !== null ? String(val) : '';
+    }
+    return match;
+  });
+
+  return result;
+}
+
+/**
+ * Construct the LLM buffer content with activity context
+ * This is the main function for building context sent to the LLM
+ * 
+ * @param {string} userInput - User's input from LLM mode
+ * @param {string} lastCommandKey - The last command key executed (for per-command llm_prepend)
+ * @returns {string} Constructed buffer content for LLM
+ */
+export function constructLLMBuffer(userInput, lastCommandKey = null) {
+  const activityData = store.getCurrentActivity();
+  
+  // Get screen content (all rounds rendered)
+  const screen = bufferManager.renderScreen();
+  
+  // Default context is just the screen if no activity
+  if (!activityData) {
+    return screen;
+  }
+  
+  const activity = activityData.activity;
+  const values = activityData.values || {};
+  
+  // Get llm_context from activity variables (it's a special variable)
+  // It can be defined as a variable with type string, or directly as a field
+  let llmContext = '';
+  if (activity.llm_context) {
+    llmContext = activity.llm_context;
+  } else if (activity.variables?.llm_context?.value) {
+    llmContext = activity.variables.llm_context.value;
+  } else if (activity.variables?.llm_context?.default) {
+    // Evaluate as literal string (not JS expression for this special variable)
+    llmContext = activity.variables.llm_context.default;
+  }
+  
+  // Default to just $_SCREEN if no llm_context defined
+  if (!llmContext) {
+    llmContext = '$_SCREEN';
+  }
+  
+  // Determine $_LLM_PREPEND content
+  let llmPrepend = '';
+  
+  // First, check for per-command llm_prepend if a command was executed
+  if (lastCommandKey && activity.commands) {
+    const cmd = activity.commands[lastCommandKey];
+    if (cmd && typeof cmd === 'object' && cmd.llm_prepend) {
+      llmPrepend = cmd.llm_prepend;
+    }
+  }
+  
+  // Then, check for skills pattern matching
+  if (activity.skills && Array.isArray(activity.skills)) {
+    const skillsPrepend = matchSkillsPatterns(userInput, activity.skills);
+    if (skillsPrepend) {
+      if (llmPrepend) {
+        llmPrepend += '\n' + skillsPrepend;
+      } else {
+        llmPrepend = skillsPrepend;
+      }
+    }
+  }
+  
+  // Expand $_LLM_PREPEND in llm_context
+  let context = llmContext;
+  context = context.replace(/\$_LLM_PREPEND\b/g, llmPrepend);
+  context = context.replace(/\$\{_LLM_PREPEND\}/g, llmPrepend);
+  
+  // Expand $_SCREEN in llm_context
+  context = context.replace(/\$_SCREEN\b/g, screen);
+  context = context.replace(/\$\{_SCREEN\}/g, screen);
+  
+  // Expand other activity variables
+  context = expandActivityVariables(context, values);
+  
+  return context;
+}
+
+/**
+ * Get the path to buffer.log
+ * @returns {string}
+ */
 export function getBufferPath() {
   return bufferManager.getBufferPath();
 }

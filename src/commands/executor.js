@@ -4,10 +4,11 @@
  */
 
 import { spawn, spawnSync } from 'child_process';
+import { writeFile } from 'fs/promises';
 import { substitute } from '../utils/template.js';
 import { formatValue } from '../config/variables.js';
 import { store } from './store.js';
-import { appendToBuffer, getBufferPath } from '../config/loader.js';
+import { appendToBuffer, getBufferPath, constructLLMBuffer } from '../config/loader.js';
 import { registerChildProcess, unregisterChildProcess } from './signal.js';
 
 /**
@@ -131,8 +132,12 @@ export async function executeCommand(key, input = '', options = {}) {
   if (!activityData) return null;
   
   const commands = activityData.activity.commands || {};
-  const template = commands[key];
+  const cmdDef = commands[key];
   
+  if (!cmdDef) return null;
+  
+  // Get the template - commands can be string or object with shell property
+  const template = typeof cmdDef === 'string' ? cmdDef : cmdDef.shell;
   if (!template) return null;
   
   // Merge activity env vars with options.env
@@ -155,7 +160,33 @@ export function getCommandTemplate(key) {
   if (!activityData) return null;
   
   const commands = activityData.activity.commands || {};
-  return commands[key] || null;
+  const cmdDef = commands[key];
+  
+  if (!cmdDef) return null;
+  
+  // Commands can be string or object with shell property
+  return typeof cmdDef === 'string' ? cmdDef : cmdDef.shell || null;
+}
+
+/**
+ * Get command definition by key (for accessing llm_prepend etc.)
+ * @param {string} key - Command key
+ * @returns {object|null} Command definition object or null
+ */
+export function getCommandDefinition(key) {
+  const activityData = store.getCurrentActivity();
+  if (!activityData) return null;
+  
+  const commands = activityData.activity.commands || {};
+  const cmdDef = commands[key];
+  
+  if (!cmdDef) return null;
+  
+  // Normalize to object format
+  if (typeof cmdDef === 'string') {
+    return { shell: cmdDef };
+  }
+  return cmdDef;
 }
 
 /**
@@ -180,16 +211,27 @@ export function isCommandKey(key) {
 
 /**
  * Execute an LLM shell command with user input substitution
+ * Reconstructs buffer.log with activity context (llm_context, skills, etc.)
  * Replaces $* with user input, $_BUFFER with buffer.log path, and $_AGENT with agent name
+ * 
  * @param {string} template - LLM shell command template from config.yml
  * @param {string} userInput - User's input string
  * @param {string} agent - Agent name (from @agent prefix or default)
  * @param {object} options - Execution options
+ * @param {string} options.lastCommandKey - Last executed command key (for per-command llm_prepend)
  * @returns {Promise<{code: number, stdout: string, stderr: string, command: string}>}
  */
 export async function executeLlmShell(template, userInput, agent, options = {}) {
   // Get buffer path
   const bufferPath = getBufferPath();
+  
+  // Reconstruct buffer.log with activity context
+  // This replaces the raw screen content with the expanded llm_context
+  const lastCommandKey = options.lastCommandKey || null;
+  const contextContent = constructLLMBuffer(userInput, lastCommandKey);
+  
+  // Write the constructed context to buffer.log
+  await writeFile(bufferPath, contextContent, 'utf8');
   
   // Substitute $_BUFFER, $_AGENT, and $* in the template
   let command = template;

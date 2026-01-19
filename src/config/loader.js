@@ -22,7 +22,8 @@ export {
   endRound,
   undoLastRound,
   getRoundCount,
-  addLinesToCurrentRound
+  addLinesToCurrentRound,
+  constructLLMBuffer
 } from '../repl/buffer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

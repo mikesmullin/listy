@@ -13,6 +13,7 @@ Rapid hotkey-driven shell execution.
 - **Variable system**: Define and edit variables with type validation (int, float, string, enum, date)
 - **VAR EDIT mode**: Real-time variable editing with MIDI jog wheel support (for fun)
 - **LLM mode**: Send prompts to a configured LLM with scrollback buffer as context
+- **LLM context chaining**: Activity-controlled LLM context with skills-based pattern matching
 - **SHELL mode**: Execute raw shell commands without leaving the REPL
 - **Persistent values**: Variable values are saved to YAML and restored on restart
 - **Configurable status bar**: Custom status format with variable substitution
@@ -185,3 +186,69 @@ aliases:
 - `float` - Floating point with optional range and step
 - `enum` - One of a fixed set of values
 - `date` - Date value with range and step (days)
+
+## LLM Context Chaining
+
+Activities can define custom LLM context that gets injected when entering LLM mode. This allows the LLM to understand the activity's conventions and take appropriate actions.
+
+### Activity-Level Context (`llm_context`)
+
+Define a multi-line template in your activity YAML that controls what the LLM "sees":
+
+```yaml
+name: discord
+llm_context: |
+  # Discord Activity Context
+  
+  You are operating in the Discord activity. When processing items:
+  
+  ## File Locations
+  - Messages are stored at: ~/.discord/messages/
+  - Filename pattern: <id>.yml
+  
+  ## Available Actions
+  - merge_yaml(file_path, yaml_data) — deep merge into target file
+  
+  ## Additional Instructions
+  $_LLM_PREPEND
+  
+  ## Current Screen
+  $_SCREEN
+```
+
+### Special Variables
+
+| Variable | Description |
+|----------|-------------|
+| `$_SCREEN` | Content of all command rounds (what's currently on screen) |
+| `$_LLM_PREPEND` | Skill-specific instructions injected based on user input patterns |
+
+### Skills (Pattern-Based Context)
+
+Define patterns that match user input in LLM mode. When matched, the skill's `llm_prepend` is injected into `$_LLM_PREPEND`:
+
+```yaml
+skills:
+  - pattern: 'prioriti[sz]e'
+    llm_prepend: |
+      ## Priority Task
+      When prioritizing items:
+      - Use scale 1-10 (10 = highest)
+      - Extract the ID from [abc123] format
+      - Call merge_yaml(~/.discord/messages/<id>.yml, {priority: N})
+      
+  - pattern: 'summariz|recap|overview'
+    llm_prepend: |
+      ## Summary Task
+      Provide a concise summary of the listed items.
+```
+
+**How it works:**
+1. User enters LLM mode (`@`)
+2. User types: `prioritize items 2 and 5`
+3. Mari matches against `skills[].pattern` (regex, case-insensitive)
+4. Matched skill's `llm_prepend` is added to `$_LLM_PREPEND`
+5. `llm_context` is expanded with the skill instructions
+6. LLM receives activity-specific guidance for the task
+
+Multiple patterns can match — all matching `llm_prepend` values are concatenated.

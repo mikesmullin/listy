@@ -29,6 +29,7 @@ export class Repl {
     this.originalValues = null; // Snapshot of values when entering VAR EDIT mode
     this.awaitingCtrlXCombo = false; // Flag for Ctrl+X prefix detection
     this.currentAgent = null; // Current agent override (persists until changed or process exits)
+    this.lastCommandKey = null; // Last executed command key (for per-command llm_prepend)
   }
   
   /**
@@ -623,6 +624,7 @@ export class Repl {
           
           try {
             await executeLlmShell(llmShell, prompt, agent, {
+              lastCommandKey: this.lastCommandKey,
               onStdout: (data) => this._addOutput(data.trim()),
               onStderr: (data) => this._addOutput(data.trim()),
               onParentExit: () => this._emergencyCleanup()
@@ -802,6 +804,9 @@ export class Repl {
     const template = getCommandTemplate(key);
     if (!template) return;
     
+    // Track last executed command for per-command llm_prepend
+    this.lastCommandKey = key;
+    
     // Extract $INPUT portion from template
     const needsInput = template.includes('$INPUT');
     const input = needsInput ? this._extractInput() : '';
@@ -841,6 +846,9 @@ export class Repl {
     for (let len = buffer.length; len > 0; len--) {
       const prefix = buffer.slice(0, len);
       if (isCommandKey(prefix)) {
+        // Track last executed command for per-command llm_prepend
+        this.lastCommandKey = prefix;
+        
         const input = buffer.slice(len);
         const template = getCommandTemplate(prefix);
         

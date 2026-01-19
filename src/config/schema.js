@@ -35,8 +35,19 @@ export function validateActivity(activity) {
       errors.push('"commands" must be an object');
     } else {
       for (const [key, cmd] of Object.entries(activity.commands)) {
-        if (typeof cmd !== 'string') {
-          errors.push(`Command "${key}" must be a string`);
+        // Commands can be either a string or an object with shell and optional llm_prepend
+        if (typeof cmd === 'string') {
+          // Simple command string - valid
+        } else if (typeof cmd === 'object' && cmd !== null) {
+          // Command object - validate structure
+          if (!cmd.shell || typeof cmd.shell !== 'string') {
+            errors.push(`Command "${key}" object must have a "shell" field (string)`);
+          }
+          if (cmd.llm_prepend !== undefined && typeof cmd.llm_prepend !== 'string') {
+            errors.push(`Command "${key}.llm_prepend" must be a string`);
+          }
+        } else {
+          errors.push(`Command "${key}" must be a string or object with shell property`);
         }
       }
     }
@@ -49,10 +60,63 @@ export function validateActivity(activity) {
     }
   }
   
+  // Validate llm_context (optional, string)
+  if (activity.llm_context !== undefined && typeof activity.llm_context !== 'string') {
+    errors.push('"llm_context" must be a string');
+  }
+  
+  // Validate skills (optional, array of skill objects)
+  if (activity.skills) {
+    if (!Array.isArray(activity.skills)) {
+      errors.push('"skills" must be an array');
+    } else {
+      for (let i = 0; i < activity.skills.length; i++) {
+        const skill = activity.skills[i];
+        const skillErrors = validateSkill(i, skill);
+        errors.push(...skillErrors);
+      }
+    }
+  }
+  
   return {
     valid: errors.length === 0,
     errors
   };
+}
+
+/**
+ * Validate a skill definition
+ * @param {number} index - Skill index in array
+ * @param {object} skill - Skill definition
+ * @returns {string[]} List of errors
+ */
+function validateSkill(index, skill) {
+  const errors = [];
+  const prefix = `skills[${index}]`;
+  
+  if (!skill || typeof skill !== 'object') {
+    errors.push(`${prefix}: must be an object`);
+    return errors;
+  }
+  
+  // Pattern is required
+  if (!skill.pattern || typeof skill.pattern !== 'string') {
+    errors.push(`${prefix}: must have a "pattern" field (string regex)`);
+  } else {
+    // Validate regex is parseable
+    try {
+      new RegExp(skill.pattern, 'i');
+    } catch (err) {
+      errors.push(`${prefix}: pattern is not a valid regex: ${err.message}`);
+    }
+  }
+  
+  // llm_prepend is required
+  if (!skill.llm_prepend || typeof skill.llm_prepend !== 'string') {
+    errors.push(`${prefix}: must have an "llm_prepend" field (string)`);
+  }
+  
+  return errors;
 }
 
 /**
