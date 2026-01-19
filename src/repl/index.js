@@ -30,6 +30,7 @@ export class Repl {
     this.awaitingCtrlXCombo = false; // Flag for Ctrl+X prefix detection
     this.currentAgent = null; // Current agent override (persists until changed or process exits)
     this.lastCommandKey = null; // Last executed command key (for per-command llm_prepend)
+    this.exitPressCount = 0; // Counter for Ctrl+C presses when no child process
   }
   
   /**
@@ -100,6 +101,11 @@ export class Repl {
   async _handleKey(key) {
     if (!this.running) return;
     
+    // Reset exit confirmation counter on any key except Ctrl+C
+    if (!(key.type === 'ctrl' && key.key === 'c')) {
+      this.exitPressCount = 0;
+    }
+    
     // Global: Handle Ctrl+X combo system
     // Ctrl+X is a prefix for global hotkey combos that work in all modes
     if (this.awaitingCtrlXCombo) {
@@ -127,8 +133,18 @@ export class Repl {
     if (key.type === 'ctrl' && key.key === 'c') {
       // handleInterrupt returns true if a child process was running and it handled the signal
       if (!handleInterrupt()) {
-        // No child process, exit normally
-        this.stop();
+        // No child process - require confirmation to exit
+        this.exitPressCount++;
+        if (this.exitPressCount >= 2) {
+          this.stop();
+        } else {
+          showFlashMessage('Press Ctrl+C again to exit', () => this._render());
+          // Reset counter after 1 seconds if no second press
+          clearTimeout(this._exitTimeout);
+          this._exitTimeout = setTimeout(() => {
+            this.exitPressCount = 0;
+          }, 1000);
+        }
       }
       return;
     }
