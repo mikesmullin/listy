@@ -267,10 +267,16 @@ class BufferManager {
 
   /**
    * Render all rounds as screen content ($_SCREEN)
+   * Excludes the current in-progress round (if any) to ensure the LLM context
+   * doesn't include the user input that is pending a response
    * @returns {string} Formatted screen content
    */
   renderScreen() {
-    return this.rounds.map(r => r.render()).join('\n');
+    // Exclude the current round (which is in-progress and shouldn't be in LLM context yet)
+    const completedRounds = this.currentRound 
+      ? this.rounds.filter(r => r !== this.currentRound)
+      : this.rounds;
+    return completedRounds.map(r => r.render()).join('\n');
   }
 }
 
