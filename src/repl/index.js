@@ -597,11 +597,19 @@ export class Repl {
         if (llmShell) {
           // Parse @agent prefix if present (allows letters, numbers, hyphens, underscores)
           let prompt = userInput;
-          const agentMatch = userInput.match(/^@([\w-]+)\s+/);
+          const agentMatch = userInput.match(/^@([\w-]+)(?:\s+|$)/);
           if (agentMatch) {
             // Update current agent (persists for future inputs)
             this.currentAgent = agentMatch[1];
-            prompt = userInput.slice(agentMatch[0].length);
+            prompt = userInput.slice(agentMatch[0].length).trim();
+          }
+          
+          // If input was only an @agent mention with no prompt, just set the agent and show flash
+          if (!prompt) {
+            this.mode.clearBuffer();
+            this.inlineBuffer = '';
+            showFlashMessage(`Agent set to: ${this.currentAgent}`, () => this._render());
+            return;
           }
           
           // Use currentAgent if set, otherwise fall back to default_agent
