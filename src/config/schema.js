@@ -81,6 +81,29 @@ export function validateActivity(activity) {
     }
   }
   
+  // Validate history (optional, object with mode keys mapping to arrays of strings)
+  if (activity.history) {
+    if (typeof activity.history !== 'object' || activity.history === null) {
+      errors.push('"history" must be an object');
+    } else {
+      const validModes = ['llm', 'shell', 'cmd'];
+      for (const [mode, entries] of Object.entries(activity.history)) {
+        if (!validModes.includes(mode.toLowerCase())) {
+          errors.push(`history.${mode}: mode must be one of: ${validModes.join(', ')}`);
+        }
+        if (!Array.isArray(entries)) {
+          errors.push(`history.${mode}: must be an array of strings`);
+        } else {
+          for (let i = 0; i < entries.length; i++) {
+            if (typeof entries[i] !== 'string') {
+              errors.push(`history.${mode}[${i}]: must be a string`);
+            }
+          }
+        }
+      }
+    }
+  }
+  
   return {
     valid: errors.length === 0,
     errors
@@ -196,6 +219,7 @@ export function getDefaultActivity() {
     variables: {},
     commands: {},
     aliases: {},
-    jog: {}
+    jog: {},
+    history: {}
   };
 }

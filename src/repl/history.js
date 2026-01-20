@@ -16,6 +16,33 @@ class ModeHistory {
   }
 
   /**
+   * Preload history entries from activity file (read-only defaults)
+   * Replaces current entries with preloaded ones
+   * @param {string[]} entries - Array of history entries (oldest first)
+   */
+  preload(entries) {
+    if (!Array.isArray(entries)) return;
+    
+    // Clear existing entries and load from activity file
+    this.entries = entries
+      .filter(e => typeof e === 'string' && e.trim() !== '')
+      .slice(0, MAX_HISTORY_SIZE);
+    
+    // Reset navigation state
+    this.position = -1;
+    this.pending = '';
+  }
+
+  /**
+   * Clear all history entries and reset state
+   */
+  clear() {
+    this.entries = [];
+    this.position = -1;
+    this.pending = '';
+  }
+
+  /**
    * Add an entry to history (after successful execution)
    * @param {string} entry - The command/text to add
    */
@@ -172,6 +199,47 @@ export class HistoryManager {
     const history = this.getHistory(mode);
     if (history) {
       history.resetNavigation();
+    }
+  }
+
+  /**
+   * Preload history entries from activity file for a specific mode
+   * @param {string} mode - Mode name (CMD, LLM, SHELL)
+   * @param {string[]} entries - Array of history entries
+   */
+  preload(mode, entries) {
+    const history = this.getHistory(mode);
+    if (history) {
+      history.preload(entries);
+    }
+  }
+
+  /**
+   * Load history from an activity's history configuration
+   * @param {object} activityHistory - History object from activity file { llm: [...], shell: [...], cmd: [...] }
+   */
+  loadFromActivity(activityHistory) {
+    // Clear all histories first
+    for (const history of Object.values(this.histories)) {
+      history.clear();
+    }
+
+    if (!activityHistory || typeof activityHistory !== 'object') {
+      return;
+    }
+
+    // Map activity history keys (lowercase) to mode names (uppercase)
+    const modeMap = {
+      'llm': 'LLM',
+      'shell': 'SHELL',
+      'cmd': 'CMD'
+    };
+
+    for (const [key, entries] of Object.entries(activityHistory)) {
+      const mode = modeMap[key.toLowerCase()];
+      if (mode && Array.isArray(entries)) {
+        this.preload(mode, entries);
+      }
     }
   }
 }

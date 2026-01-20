@@ -31,6 +31,7 @@ export class Repl {
     this.currentAgent = null; // Current agent override (persists until changed or process exits)
     this.lastCommandKey = null; // Last executed command key (for per-command llm_prepend)
     this.exitPressCount = 0; // Counter for Ctrl+C presses when no child process
+    this.historyLoadedActivities = new Set(); // Track which activities have had history loaded
   }
   
   /**
@@ -45,6 +46,9 @@ export class Repl {
     // Initialize flash message timing from config
     const flashMsPerChar = await getFlashMsPerChar();
     setFlashTiming(flashMsPerChar);
+    
+    // Load history from current activity
+    this._loadHistoryFromActivity();
     
     // Set up input handlers
     this.input.onKey(this._handleKey.bind(this));
@@ -247,6 +251,7 @@ export class Repl {
       const next = store.getNextActivity();
       if (next) {
         store.setCurrentActivity(next);
+        this._loadHistoryFromActivity();
         // this._addOutput(`Switched to: ${next}`);
       }
       return;
@@ -257,6 +262,7 @@ export class Repl {
       const prev = store.getPrevActivity();
       if (prev) {
         store.setCurrentActivity(prev);
+        this._loadHistoryFromActivity();
         // this._addOutput(`Switched to: ${prev}`);
       }
       return;
@@ -1088,6 +1094,8 @@ export class Repl {
       store.setCurrentActivity(activities[0].name);
       this._addOutput(`Reloaded ${activities.length} activities (switched to: ${activities[0].name})`);
     }
+    
+    // Note: History is NOT reloaded on :reload - only on process restart
   }
   
   /**
@@ -1235,5 +1243,40 @@ export class Repl {
    */
   _render() {
     render(this._getState());
+  }
+
+  /**
+   * Load history from current activity's history configuration
+   * Only loads once per activity unless force=true (used by :reload)
+   * @param {boolean} force - If true, reload even if already loaded for this activity
+   * @private
+   */
+  _loadHistoryFromActivity(force = false) {
+    const activityName = store.getCurrentActivityName();
+    if (!activityName) return;
+
+    // Skip if already loaded for this activity (unless forced)
+    if (!force && this.historyLoadedActivities.has(activityName)) {
+      return;
+    }
+
+    const activityData = store.getCurrentActivity();
+    if (activityData && activityData.activity && activityData.activity.history) {
+      this.history.loadFromActivity(activityData.activity.history);
+    } else {
+      // No history defined - clear all histories
+      this.history.loadFromActivity(null);
+    }
+
+    // Mark this activity as having history loaded
+    this.historyLoadedActivities.add(activityName);
+  }
+
+  /**
+   * Reset history loaded tracking (called by :reload)
+   * @private
+   */
+  _resetHistoryLoaded() {
+    this.historyLoadedActivities.clear();
   }
 }
