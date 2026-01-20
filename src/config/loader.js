@@ -22,6 +22,7 @@ export {
   endRound,
   undoLastRound,
   getRoundCount,
+  getRounds,
   addLinesToCurrentRound,
   constructLLMBuffer
 } from '../repl/buffer.js';

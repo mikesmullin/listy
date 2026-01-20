@@ -462,6 +462,11 @@ export async function undoLastRound() {
 export function getRoundCount() {
   return bufferManager.getRoundCount();
 }
+
+export function getRounds() {
+  return bufferManager.getRounds();
+}
+
 export function addLinesToCurrentRound(count = 1) {
   bufferManager.addLinesToCurrentRound(count);
 }

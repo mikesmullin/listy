@@ -6,12 +6,12 @@
 import { InputHandler, KEY } from './input.js';
 import { ModeStateMachine, MODE } from './modes.js';
 import { HistoryManager } from './history.js';
-import { render, initTerminal, resetTerminal, printOutput, clearScreen, showCursor, startSpinner, stopSpinner, showFlashMessage, setFlashTiming, eraseLines } from './statusbar.js';
+import { render, initTerminal, resetTerminal, printOutput, clearScreen, showCursor, startSpinner, stopSpinner, showFlashMessage, setFlashTiming } from './statusbar.js';
 import { JogWheelHandler } from './jog.js';
 import { store } from '../commands/store.js';
 import { executeCommand, executeTemplate, isCommandKey, getCommandTemplate, executeLlmShell, executeShellDirect } from '../commands/executor.js';
 import { parseValue, incrementValue, decrementValue, formatValue } from '../config/variables.js';
-import { persistVariableValues, loadActivities, initBuffer, clearBuffer, closeBuffer, getLlmShellCommand, getDefaultAgent, getFlashMsPerChar, startRound, endRound, undoLastRound, getRoundCount, addLinesToCurrentRound } from '../config/loader.js';
+import { persistVariableValues, loadActivities, initBuffer, clearBuffer, closeBuffer, getLlmShellCommand, getDefaultAgent, getFlashMsPerChar, startRound, endRound, undoLastRound, getRoundCount, getRounds, addLinesToCurrentRound } from '../config/loader.js';
 import { handleInterrupt } from '../commands/signal.js';
 import { VoiceListener } from './voice.js';
 
@@ -217,7 +217,7 @@ export class Repl {
   
   /**
    * Undo the last execution round
-   * Removes it from memory and rewrites buffer.log
+   * Removes it from memory, clears screen, and reconstructs output from remaining rounds
    * @private
    */
   async _undoLastRound() {
@@ -230,10 +230,30 @@ export class Repl {
     
     const result = await undoLastRound();
     if (result) {
-      const { round, linesToErase } = result;
+      const { round } = result;
       
-      // Erase the cumulative lines from the screen
-      eraseLines(linesToErase, this._getState());
+      // Clear the entire screen and scrollback
+      process.stdout.write('\x1b[3J\x1b[2J\x1b[H');
+      
+      // Re-initialize terminal with scroll region
+      initTerminal(this._getState());
+      
+      // Reconstruct output from remaining rounds
+      const remainingRounds = getRounds();
+      for (const r of remainingRounds) {
+        // Print command
+        if (r.command) {
+          printOutput(r.command, this._getState());
+        }
+        // Print output chunks
+        for (const chunk of r.output) {
+          if (chunk.trim()) {
+            printOutput(chunk.trim(), this._getState());
+          }
+        }
+        // Visual break after round
+        printOutput('', this._getState());
+      }
       
       // Show flash message with undo confirmation
       const cmd = round.command || '(empty)';
