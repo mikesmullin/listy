@@ -17,6 +17,11 @@ export function validateActivity(activity) {
     errors.push('Activity must have a "name" field (string)');
   }
   
+  // Validate weight (optional, number)
+  if (activity.weight !== undefined && typeof activity.weight !== 'number') {
+    errors.push('"weight" must be a number');
+  }
+  
   // Validate variables
   if (activity.variables) {
     if (typeof activity.variables !== 'object') {

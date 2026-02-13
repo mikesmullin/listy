@@ -257,11 +257,19 @@ export class VariableStore {
   }
   
   /**
-   * Get list of activity names
+   * Get list of activity names sorted by weight then name
    * @returns {string[]} Activity names
    */
   getActivityNames() {
-    return Array.from(this.activities.keys()).sort();
+    const entries = Array.from(this.activities.entries());
+    // Sort by weight (default 100) then alphabetically by name
+    entries.sort((a, b) => {
+      const weightA = a[1].activity.weight ?? 100;
+      const weightB = b[1].activity.weight ?? 100;
+      if (weightA !== weightB) return weightA - weightB;
+      return a[0].localeCompare(b[0]);
+    });
+    return entries.map(e => e[0]);
   }
   
   /**

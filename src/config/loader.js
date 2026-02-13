@@ -144,8 +144,13 @@ export async function loadActivities() {
     console.error('Error reading activity directory:', err.message);
   }
   
-  // Sort alphabetically by name
-  activities.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  // Sort by weight (default 100) then alphabetically by name
+  activities.sort((a, b) => {
+    const weightA = a.weight ?? 100;
+    const weightB = b.weight ?? 100;
+    if (weightA !== weightB) return weightA - weightB;
+    return (a.name || '').localeCompare(b.name || '');
+  });
   
   return activities;
 }
