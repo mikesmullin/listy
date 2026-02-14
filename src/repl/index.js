@@ -829,6 +829,8 @@ export class Repl {
           this.inlineBuffer = '';
         }
       }
+      // Return to NORMAL mode after command execution
+      this.mode.toNormal();
       return;
     }
     
@@ -925,6 +927,8 @@ export class Repl {
         
         this._addOutput(''); // Visual break after command
       }
+      // Return to NORMAL mode after command execution
+      this.mode.toNormal();
       return;
     }
     
@@ -1008,6 +1012,8 @@ export class Repl {
           this.inlineBuffer = '';
         }
       }
+      // Return to NORMAL mode after command execution
+      this.mode.toNormal();
       return;
     }
     
