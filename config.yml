@@ -5,8 +5,10 @@
 # $_BUFFER is the path to buffer.log (scrollback capture)
 # $_AGENT is the agent name, parsed from @agent prefix or default_agent if not specified
 #   e.g. input "@solo what is 2+2?" sets $_AGENT=solo, $*="what is 2+2?"
-default_agent: mini-solo
-llm_shell: cat $_BUFFER | subd -i -t "$_AGENT" "$*"
+#default_agent: mini-solo
+default_agent: home
+#llm_shell: cat $_BUFFER | subd -i -t "$_AGENT" "$*"
+llm_shell: cd /workspace/agl && bun src/agents/$_AGENT.mjs "$*"
 
 # Flash message timing: milliseconds per character
 # A 50-character message will display for (50 * flash_ms_per_char) milliseconds
