@@ -258,6 +258,33 @@ export async function executeLlmShell(template, userInput, agent, options = {}) 
   return { ...result, command };
 }
 
+/**
+ * Prepare the LLM shell command string without executing it.
+ * Writes the constructed LLM context to buffer.log, then returns the
+ * fully-substituted shell command ready for dispatch.
+ *
+ * @param {string} template      - llm_shell template from config.yml
+ * @param {string} userInput     - User's prompt text
+ * @param {string} agent         - Agent name
+ * @param {object} options
+ * @param {string} [options.lastCommandKey] - For per-command llm_prepend
+ * @returns {Promise<string>} Resolved shell command string
+ */
+export async function prepareLlmCommand(template, userInput, agent, options = {}) {
+  const bufferPath = getBufferPath();
+  const lastCommandKey = options.lastCommandKey || null;
+  const contextContent = constructLLMBuffer(userInput, lastCommandKey);
+  await writeFile(bufferPath, contextContent, 'utf8');
+
+  let command = template;
+  command = command.replace(/\$_BUFFER\b/g, bufferPath);
+  command = command.replace(/\$\{_BUFFER\}/g, bufferPath);
+  command = command.replace(/\$_AGENT\b/g, agent);
+  command = command.replace(/\$\{_AGENT\}/g, agent);
+  command = command.replace(/\$\*/g, userInput);
+  return command;
+}
+
 function resolveShellAlias(command, aliases) {
   if (!command || !aliases || Object.keys(aliases).length === 0) {
     return command;
@@ -292,6 +319,45 @@ async function buildShellCommand(command) {
   }
 
   return resolvedCommand ? `${prefix} ${resolvedCommand}` : prefix;
+}
+
+/**
+ * Resolve a SHELL-mode command (alias + prefix) without executing it.
+ * @param {string} command - Raw user input
+ * @returns {Promise<string>} Fully-resolved command string
+ */
+export async function resolveShellCommand(command) {
+  return buildShellCommand(command);
+}
+
+/**
+ * Resolve an activity hotkey command (variable substitution) without executing it.
+ * @param {string} key   - Command key
+ * @param {string} input - Optional $INPUT value
+ * @returns {{command: string, env: object}|null}
+ */
+export function resolveActivityCommand(key, input = '') {
+  const activityData = store.getCurrentActivity();
+  if (!activityData) return null;
+
+  const commands = activityData.activity.commands || {};
+  const cmdDef = commands[key];
+  if (!cmdDef) return null;
+
+  const template = typeof cmdDef === 'string' ? cmdDef : cmdDef.shell;
+  if (!template) return null;
+
+  const values = store.getAll();
+  const definitions = store.getAllDefinitions();
+  const formatted = {};
+  for (const [name, value] of Object.entries(values)) {
+    const def = definitions[name];
+    formatted[name] = def ? formatValue(value, def) : String(value);
+  }
+
+  const command = substitute(template, formatted, input);
+  const env = { ...(activityData.activity.env || {}) };
+  return { command, env };
 }
 
 /**

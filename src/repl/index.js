@@ -6,13 +6,15 @@
 import { InputHandler, KEY } from './input.js';
 import { ModeStateMachine, MODE } from './modes.js';
 import { HistoryManager } from './history.js';
-import { render, initTerminal, resetTerminal, printOutput, clearScreen, showCursor, startSpinner, stopSpinner, showFlashMessage, setFlashTiming } from './statusbar.js';
+import { initTerminal, resetTerminal, clearScreen, showCursor, hideCursor, showFlashMessage, setFlashTiming, getTermSize, renderStatusOnly } from './statusbar.js';
 import { JogWheelHandler } from './jog.js';
 import { store } from '../commands/store.js';
-import { executeCommand, executeTemplate, isCommandKey, getCommandTemplate, executeLlmShell, executeShellDirect } from '../commands/executor.js';
+import { isCommandKey, getCommandTemplate, resolveShellCommand, resolveActivityCommand, prepareLlmCommand } from '../commands/executor.js';
 import { parseValue, incrementValue, decrementValue, formatValue } from '../config/variables.js';
-import { persistVariableValues, loadActivities, initBuffer, clearBuffer, closeBuffer, getLlmShellCommand, getDefaultAgent, getFlashMsPerChar, startRound, endRound, undoLastRound, getRoundCount, getRounds, addLinesToCurrentRound } from '../config/loader.js';
-import { handleInterrupt } from '../commands/signal.js';
+import { persistVariableValues, loadActivities, initBuffer, clearBuffer, closeBuffer, getLlmShellCommand, getDefaultAgent, getFlashMsPerChar, appendToBuffer } from '../config/loader.js';
+import { processManager } from './process-manager.js';
+import { renderProcessView } from './process-view.js';
+// signal.js (handleInterrupt) no longer needed; processManager handles child lifecycle
 import { VoiceListener } from './voice.js';
 
 /**
@@ -61,7 +63,10 @@ export class Repl {
     
     // Initialize terminal with scroll region
     initTerminal(this._getState());
-    
+
+    // Start the parallel process manager frame loop
+    processManager.start(() => this._renderFrame());
+
     // Clear screen on startup (same as Ctrl+L)
     await this._clearScreen();
     
@@ -83,6 +88,7 @@ export class Repl {
     this.running = false;
     this.input.stop();
     await this.jog.stop();
+    processManager.stop();
     closeBuffer();
     resetTerminal();
     process.stdout.write(clearScreen() + showCursor());
@@ -98,7 +104,6 @@ export class Repl {
    */
   _emergencyCleanup() {
     try {
-      stopSpinner();
       resetTerminal();
       process.stdout.write(showCursor());
     } catch (e) {
@@ -141,17 +146,17 @@ export class Repl {
       return;
     }
     
-    // Global: Ctrl+C - check if child process is running first
+    // Global: Ctrl+C - kill running processes or confirm exit
     if (key.type === 'ctrl' && key.key === 'c') {
-      // handleInterrupt returns true if a child process was running and it handled the signal
-      if (!handleInterrupt()) {
-        // No child process - require confirmation to exit
+      if (processManager.hasRunning()) {
+        processManager.killAll();
+        showFlashMessage('Killed all running processes', () => this._render());
+      } else {
         this.exitPressCount++;
         if (this.exitPressCount >= 2) {
           this.stop();
         } else {
           showFlashMessage('Press Ctrl+C again to exit', () => this._render());
-          // Reset counter after 1 seconds if no second press
           clearTimeout(this._exitTimeout);
           this._exitTimeout = setTimeout(() => {
             this.exitPressCount = 0;
@@ -216,8 +221,8 @@ export class Repl {
   async _handleCtrlXCombo(key) {
     switch (key) {
       case 'u':
-        // Ctrl+X, u: Undo last round
-        await this._undoLastRound();
+        // Ctrl+X, u: Undo last process block
+        this._undoLastRound();
         return true;
       default:
         return false;
@@ -225,51 +230,36 @@ export class Repl {
   }
   
   /**
-   * Undo the last execution round
-   * Removes it from memory, clears screen, and reconstructs output from remaining rounds
+   * Render process view into scroll region + refresh status bar.
+   * Called by the processManager frame loop (~10fps) and on key presses.
    * @private
    */
-  async _undoLastRound() {
-    const count = getRoundCount();
-    if (count === 0) {
-      // Show flash message for no rounds
-      showFlashMessage('No rounds to undo', () => this._render());
+  _renderFrame() {
+    const { cols, rows } = getTermSize();
+    const state = this._getState();
+    const statusHeight = state.mode === 'INPUT' ? 2 : 1;
+    const scrollBottom = rows - statusHeight;
+
+    let out = '';
+    out += hideCursor();
+    out += renderProcessView(processManager.procs, 1, scrollBottom, cols);
+    process.stdout.write(out);
+
+    renderStatusOnly(state);
+  }
+
+  /**
+   * Remove the most recently dispatched process block (undo).
+   * @private
+   */
+  _undoLastRound() {
+    if (processManager.procs.length === 0) {
+      showFlashMessage('Nothing to undo', () => this._render());
       return;
     }
-    
-    const result = await undoLastRound();
-    if (result) {
-      const { round } = result;
-      
-      // Clear the entire screen and scrollback
-      process.stdout.write('\x1b[3J\x1b[2J\x1b[H');
-      
-      // Re-initialize terminal with scroll region
-      initTerminal(this._getState());
-      
-      // Reconstruct output from remaining rounds
-      const remainingRounds = getRounds();
-      for (const r of remainingRounds) {
-        // Print command
-        if (r.command) {
-          printOutput(r.command, this._getState());
-        }
-        // Print output chunks
-        for (const chunk of r.output) {
-          if (chunk.trim()) {
-            printOutput(chunk.trim(), this._getState());
-          }
-        }
-        // Visual break after round
-        printOutput('', this._getState());
-      }
-      
-      // Show flash message with undo confirmation
-      const cmd = round.command || '(empty)';
-      // Truncate command if too long
-      const displayCmd = cmd.length > 40 ? cmd.slice(0, 37) + '...' : cmd;
-      showFlashMessage(`Undid: ${displayCmd}`, () => this._render());
-    }
+    const removed = processManager.procs.pop();
+    const label = removed.label.length > 40 ? removed.label.slice(0, 37) + '...' : removed.label;
+    showFlashMessage(`Removed: ${label}`, () => this._render());
   }
   
   /**
@@ -361,7 +351,7 @@ export class Repl {
       
       // Check for command key
       if (isCommandKey(key.key)) {
-        await this._executeCurrentCommand(key.key);
+        this._executeCurrentCommand(key.key);
         return;
       }
       
@@ -379,7 +369,7 @@ export class Repl {
     if (key.type === 'special' && key.key === 'enter') {
       const buffer = this.mode.getBuffer();
       if (buffer) {
-        await this._executeBufferCommand(buffer);
+        this._executeBufferCommand(buffer);
       }
       this.mode.toNormal();
       this.inlineBuffer = '';
@@ -484,7 +474,7 @@ export class Repl {
         try {
           await persistVariableValues(activityData.activity);
         } catch (err) {
-          this._addOutput(`Error saving: ${err.message}`);
+          processManager.addSynthetic('error', [`Error saving: ${err.message}`]);
         }
       }
       
@@ -676,19 +666,16 @@ export class Repl {
       return [];
     }
     
-    // Get only the most recent round from scrollback
-    const rounds = getRounds();
-    const lastRound = rounds[rounds.length - 1];
+    // Get lines from the most recently completed process
+    const completedProcs = processManager.procs.filter(mp => !mp.running);
+    const lastProc = completedProcs[completedProcs.length - 1];
     const matches = [];
-    const seen = new Set(); // Deduplicate by captured value
-    
-    if (!lastRound) return [];
-    
-    // Helper to strip ANSI escape codes
+    const seen = new Set();
+
+    if (!lastProc) return [];
+
     const stripAnsi = (str) => str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-    
-    const output = lastRound.getOutput();
-    const lines = output.split('\n');
+    const lines = lastProc.lines;
     
     for (const line of lines) {
       // Strip ANSI codes before matching
@@ -764,74 +751,49 @@ export class Repl {
       return;
     }
     
-    // Enter - execute LLM shell command, stay in LLM mode
+    // Enter - prepare LLM context then dispatch non-blocking
     if (key.type === 'special' && key.key === 'enter') {
       const userInput = this.mode.getBuffer();
       if (userInput) {
-        // Add to history before execution
         this.history.add('LLM', userInput);
         this.history.resetNavigation('LLM');
-        
+
         const llmShell = await getLlmShellCommand();
         if (llmShell) {
-          // Parse @agent prefix if present (allows letters, numbers, hyphens, underscores)
           let prompt = userInput;
           const agentMatch = userInput.match(/^@([\w-]+)(?:\s+|$)/);
           if (agentMatch) {
-            // Update current agent (persists for future inputs)
             this.currentAgent = agentMatch[1];
             prompt = userInput.slice(agentMatch[0].length).trim();
           }
-          
-          // If input was only an @agent mention with no prompt, just set the agent and show flash
+
           if (!prompt) {
             this.mode.clearBuffer();
             this.inlineBuffer = '';
             showFlashMessage(`Agent set to: ${this.currentAgent}`, () => this._render());
             return;
           }
-          
-          // Use currentAgent if set, otherwise fall back to default_agent
+
           const agent = this.currentAgent || await getDefaultAgent();
-          
-          const displayCommand = `@ ${userInput}`;
-          
-          // Start a new round for this execution
-          startRound(displayCommand);
-          
-          this._addOutput(displayCommand);
-          
-          // Clear buffer before exec starts
+
           this.mode.clearBuffer();
           this.inlineBuffer = '';
           this._render();
-          
-          // Start spinner
-          startSpinner(() => this._render());
-          
-          try {
-            await executeLlmShell(llmShell, prompt, agent, {
-              lastCommandKey: this.lastCommandKey,
-              onStdout: (data) => this._addOutput(data.trim()),
-              onStderr: (data) => this._addOutput(data.trim()),
-              onParentExit: () => this._emergencyCleanup()
+
+          // Prepare (writes buffer.log) then dispatch non-blocking
+          const lastKey = this.lastCommandKey;
+          prepareLlmCommand(llmShell, prompt, agent, { lastCommandKey: lastKey })
+            .then(command => {
+              processManager.dispatch(`@ ${userInput}`, command, {
+                onLine: (line) => appendToBuffer(line),
+              });
             });
-          } finally {
-            // Stop spinner
-            stopSpinner();
-            // End the round
-            endRound();
-          }
-          
-          this._addOutput(''); // Visual break after command
         } else {
-          this._addOutput('Error: llm_shell not configured in config.yml');
-          // Clear buffer on error too
+          processManager.addSynthetic('error', ['llm_shell not configured in config.yml']);
           this.mode.clearBuffer();
           this.inlineBuffer = '';
         }
       }
-      // Return to NORMAL mode after command execution
       this.mode.toNormal();
       return;
     }
@@ -891,45 +853,24 @@ export class Repl {
       return;
     }
     
-    // Enter - execute shell command, stay in SHELL mode
+    // Enter - dispatch shell command non-blocking, return to NORMAL
     if (key.type === 'special' && key.key === 'enter') {
       const command = this.mode.getBuffer();
       if (command) {
-        // Add to history before execution
         this.history.add('SHELL', command);
         this.history.resetNavigation('SHELL');
-        
-        const displayCommand = `! ${command}`;
-        
-        // Start a new round for this execution
-        startRound(displayCommand);
-        
-        this._addOutput(displayCommand);
-        
-        // Clear buffer before exec starts
+
         this.mode.clearBuffer();
         this.inlineBuffer = '';
         this._render();
-        
-        // Start spinner
-        startSpinner(() => this._render());
-        
-        try {
-          await executeShellDirect(command, {
-            onStdout: (data) => this._addOutput(data.trim()),
-            onStderr: (data) => this._addOutput(data.trim()),
-            onParentExit: () => this._emergencyCleanup()
+
+        // Resolve alias + prefix, then dispatch
+        resolveShellCommand(command).then(resolved => {
+          processManager.dispatch(`! ${command}`, resolved, {
+            onLine: (line) => appendToBuffer(line),
           });
-        } finally {
-          // Stop spinner
-          stopSpinner();
-          // End the round
-          endRound();
-        }
-        
-        this._addOutput(''); // Visual break after command
+        });
       }
-      // Return to NORMAL mode after command execution
       this.mode.toNormal();
       return;
     }
@@ -1005,9 +946,9 @@ export class Repl {
           this.mode.clearBuffer();
           this.inlineBuffer = '';
           this._render();
-          
-          // Execute the matched command
-          await this._executeCommandByKey(match.key);
+
+          // Dispatch non-blocking
+          this._executeCommandByKey(match.key);
         } else {
           showFlashMessage(`No command for word: ${word}`, () => this._render());
           this.mode.clearBuffer();
@@ -1126,10 +1067,10 @@ export class Repl {
     if (match) {
       // Exit voice mode before executing
       await this._exitVoiceMode();
-      
-      // Execute the matched command
-      await this._executeCommandByKey(match.key);
-      
+
+      // Dispatch non-blocking
+      this._executeCommandByKey(match.key);
+
       this._render();
     }
   }
@@ -1188,41 +1129,24 @@ export class Repl {
   }
   
   /**
-   * Execute a command by its key
+   * Execute a command by its key (non-blocking)
    * @param {string} key - Command key
    * @private
    */
-  async _executeCommandByKey(key) {
+  _executeCommandByKey(key) {
     const template = getCommandTemplate(key);
     if (!template) return;
-    
-    // Track last executed command for per-command llm_prepend
+
     this.lastCommandKey = key;
-    
-    const expandedCommand = `$ ${this._getExpandedCommand(template, '')}`;
-    
-    // Start a new round for this execution
-    startRound(expandedCommand);
-    
-    this._addOutput(expandedCommand);
-    
-    // Start spinner
-    startSpinner(() => this._render());
-    
-    try {
-      await executeCommand(key, '', {
-        onStdout: (data) => this._addOutput(data.trim()),
-        onStderr: (data) => this._addOutput(data.trim()),
-        onParentExit: () => this._emergencyCleanup()
-      });
-    } finally {
-      // Stop spinner
-      stopSpinner();
-      // End the round
-      endRound();
-    }
-    
-    this._addOutput(''); // Visual break after command
+
+    const resolved = resolveActivityCommand(key, '');
+    if (!resolved) return;
+
+    const label = `$ ${this._getExpandedCommand(template, '')}`;
+    processManager.dispatch(label, resolved.command, {
+      env: resolved.env,
+      onLine: (line) => appendToBuffer(line),
+    });
   }
   
   /**
@@ -1239,90 +1163,50 @@ export class Repl {
   }
   
   /**
-   * Execute command with current variables
+   * Execute command with current variables (non-blocking)
    * @private
    */
-  async _executeCurrentCommand(key) {
+  _executeCurrentCommand(key) {
     const template = getCommandTemplate(key);
     if (!template) return;
-    
-    // Track last executed command for per-command llm_prepend
+
     this.lastCommandKey = key;
-    
-    // Extract $INPUT portion from template
+
     const needsInput = template.includes('$INPUT');
     const input = needsInput ? this._extractInput() : '';
-    
-    const expandedCommand = `$ ${this._getExpandedCommand(template, input)}`;
-    
-    // Start a new round for this execution
-    startRound(expandedCommand);
-    
-    this._addOutput(expandedCommand);
-    
-    // Start spinner
-    startSpinner(() => this._render());
-    
-    try {
-      const result = await executeCommand(key, input, {
-        onStdout: (data) => this._addOutput(data.trim()),
-        onStderr: (data) => this._addOutput(data.trim()),
-        onParentExit: () => this._emergencyCleanup()
-      });
-    } finally {
-      // Stop spinner
-      stopSpinner();
-      // End the round
-      endRound();
-    }
-    
-    this._addOutput(''); // Visual break after command
+
+    const resolved = resolveActivityCommand(key, input);
+    if (!resolved) return;
+
+    const label = `$ ${this._getExpandedCommand(template, input)}`;
+    processManager.dispatch(label, resolved.command, {
+      env: resolved.env,
+      onLine: (line) => appendToBuffer(line),
+    });
   }
   
   /**
-   * Execute buffer as command
+   * Execute buffer as command (non-blocking)
    * @private
    */
-  async _executeBufferCommand(buffer) {
-    // Try to find matching command
+  _executeBufferCommand(buffer) {
     for (let len = buffer.length; len > 0; len--) {
       const prefix = buffer.slice(0, len);
       if (isCommandKey(prefix)) {
-        // Track last executed command for per-command llm_prepend
         this.lastCommandKey = prefix;
-        
         const input = buffer.slice(len);
         const template = getCommandTemplate(prefix);
-        
-        const expandedCommand = `$ ${this._getExpandedCommand(template, input)}`;
-        
-        // Start a new round for this execution
-        startRound(expandedCommand);
-        
-        this._addOutput(expandedCommand);
-        
-        // Start spinner
-        startSpinner(() => this._render());
-        
-        try {
-          await executeCommand(prefix, input, {
-            onStdout: (data) => this._addOutput(data.trim()),
-            onStderr: (data) => this._addOutput(data.trim()),
-            onParentExit: () => this._emergencyCleanup()
-          });
-        } finally {
-          // Stop spinner
-          stopSpinner();
-          // End the round
-          endRound();
-        }
-        
-        this._addOutput(''); // Visual break after command
+        const resolved = resolveActivityCommand(prefix, input);
+        if (!resolved) return;
+        const label = `$ ${this._getExpandedCommand(template, input)}`;
+        processManager.dispatch(label, resolved.command, {
+          env: resolved.env,
+          onLine: (line) => appendToBuffer(line),
+        });
         return;
       }
     }
-    
-    this._addOutput(`Unknown command: ${buffer}`);
+    processManager.addSynthetic('error', [`Unknown command: ${buffer}`]);
   }
   
   /**
@@ -1333,13 +1217,13 @@ export class Repl {
     const parts = cmd.trim().split(/\s+/);
     const command = parts[0];
     const args = parts.slice(1);
-    
+
     switch (command) {
       case 'q':
       case 'quit':
         this.stop();
         break;
-        
+
       case 'set':
         if (args.length >= 2) {
           const varName = args[0];
@@ -1349,48 +1233,47 @@ export class Repl {
             const parsed = parseValue(value, def);
             if (parsed !== null) {
               store.set(varName, parsed);
-              this._addOutput(`${varName}=${formatValue(parsed, def)}`);
+              processManager.addSynthetic(':set', [`${varName}=${formatValue(parsed, def)}`]);
             } else {
-              this._addOutput(`Invalid value for ${varName}`);
+              processManager.addSynthetic('error', [`Invalid value for ${varName}`]);
             }
           } else {
-            this._addOutput(`Unknown variable: ${varName}`);
+            processManager.addSynthetic('error', [`Unknown variable: ${varName}`]);
           }
         }
         break;
-        
+
       case 'unset':
         if (args[0]) {
           if (store.reset(args[0])) {
-            this._addOutput(`${args[0]} reset to default`);
+            processManager.addSynthetic(':unset', [`${args[0]} reset to default`]);
           } else {
-            this._addOutput(`Unknown variable: ${args[0]}`);
+            processManager.addSynthetic('error', [`Unknown variable: ${args[0]}`]);
           }
         }
         break;
-        
+
       case 'vars':
-        const display = store.getFormattedDisplay();
-        for (const item of display) {
-          this._addOutput(item);
-        }
+        processManager.addSynthetic(':vars', store.getFormattedDisplay());
         break;
-        
+
       case 'reload':
         await this._reloadActivities();
         break;
-        
+
       case 'help':
-        this._addOutput(':set VAR VALUE  - Set variable');
-        this._addOutput(':unset VAR      - Reset variable');
-        this._addOutput(':vars           - List variables');
-        this._addOutput(':reload         - Reload activities');
-        this._addOutput(':q / :quit      - Exit');
+        processManager.addSynthetic(':help', [
+          ':set VAR VALUE  - Set variable',
+          ':unset VAR      - Reset variable',
+          ':vars           - List variables',
+          ':reload         - Reload activities',
+          ':q / :quit      - Exit',
+        ]);
         break;
-        
+
       default:
         if (command) {
-          this._addOutput(`Unknown command: ${command}`);
+          processManager.addSynthetic('error', [`Unknown command: ${command}`]);
         }
     }
   }
@@ -1463,18 +1346,7 @@ export class Repl {
     };
   }
   
-  /**
-   * Add output line - prints to terminal and refreshes status bar
-   * Also tracks line count for the current round (for undo)
-   * @private
-   */
-  _addOutput(line) {
-    printOutput(line, this._getState());
-    // Track line count for current round (each _addOutput is one line)
-    // Count actual newlines in the line plus 1 for the line itself
-    const newlineCount = (line.match(/\n/g) || []).length;
-    addLinesToCurrentRound(1 + newlineCount);
-  }
+  // _addOutput removed: output now goes through processManager.dispatch / addSynthetic
   
   /**
    * Reload activities from disk
@@ -1482,45 +1354,34 @@ export class Repl {
    */
   async _reloadActivities() {
     const currentActivityName = store.getCurrentActivityName();
-    
-    // Clear the store
     store.clear();
-    
-    // Reload activities from disk
     const activities = await loadActivities();
-    
+
     if (activities.length === 0) {
-      this._addOutput('No activities found after reload');
+      processManager.addSynthetic(':reload', ['No activities found after reload']);
       return;
     }
-    
-    // Re-register all activities
+
     for (const activity of activities) {
       store.registerActivity(activity);
     }
-    
-    // Try to restore the previous activity, or fall back to first
+
     if (currentActivityName && store.setCurrentActivity(currentActivityName)) {
-      this._addOutput(`Reloaded ${activities.length} activities (current: ${currentActivityName})`);
+      processManager.addSynthetic(':reload', [`Reloaded ${activities.length} activities (current: ${currentActivityName})`]);
     } else {
       store.setCurrentActivity(activities[0].name);
-      this._addOutput(`Reloaded ${activities.length} activities (switched to: ${activities[0].name})`);
+      processManager.addSynthetic(':reload', [`Reloaded ${activities.length} activities (switched to: ${activities[0].name})`]);
     }
-    
-    // Note: History is NOT reloaded on :reload - only on process restart
   }
   
   /**
-   * Clear screen and scrollback buffer
-   * Also truncates buffer.log
+   * Clear screen, scrollback buffer, and all process blocks.
    * @private
    */
   async _clearScreen() {
-    // Clear buffer.log
     await clearBuffer();
-    // Clear scrollback: ESC[3J clears scrollback, ESC[2J clears screen, ESC[H moves to home
+    processManager.clear();
     process.stdout.write('\x1b[3J\x1b[2J\x1b[H');
-    // Re-initialize terminal with scroll region
     initTerminal(this._getState());
   }
   
@@ -1531,11 +1392,9 @@ export class Repl {
   _showHelp() {
     const activityData = store.getCurrentActivity();
     if (!activityData || !activityData.activity) return;
-    
+
     const { commands, aliases } = activityData.activity;
-    
-    // Get current variable values, filtering out undefined/empty
-    // Pre-format using formatValue (respects shellFormat) so display matches execution
+
     const values = activityData.values || {};
     const definitions = store.getAllDefinitions();
     const definedValues = {};
@@ -1545,32 +1404,24 @@ export class Repl {
         definedValues[name] = def ? formatValue(val, def) : String(val);
       }
     }
-    
-    this._addOutput('');
-    this._addOutput('Commands:');
-    
+
+    const lines = ['Commands:'];
     if (commands) {
       for (const [key, cmdDef] of Object.entries(commands)) {
-        // Get the command template (string or object with shell property)
         const cmd = typeof cmdDef === 'string' ? cmdDef : cmdDef.shell;
-        // Substitute defined variables, leave undefined as-is
         const expanded = this._substituteForHelp(cmd, definedValues);
-        // Get optional description
         const description = typeof cmdDef === 'object' ? cmdDef.description : null;
         const descSuffix = description ? `  # ${description}` : '';
-        this._addOutput(`  ${key}  ${expanded}${descSuffix}`);
+        lines.push(`  ${key}  ${expanded}${descSuffix}`);
       }
     }
-    
     if (aliases && Object.keys(aliases).length > 0) {
-      this._addOutput('');
-      this._addOutput('Aliases:');
+      lines.push('', 'Aliases:');
       for (const [alias, target] of Object.entries(aliases)) {
-        this._addOutput(`  ${alias} -> ${target}`);
+        lines.push(`  ${alias} -> ${target}`);
       }
     }
-    
-    this._addOutput('');
+    processManager.addSynthetic('?help', lines);
   }
   
   /**
@@ -1653,11 +1504,11 @@ export class Repl {
   }
 
   /**
-   * Render the screen
+   * Render the screen (process view + status bar)
    * @private
    */
   _render() {
-    render(this._getState());
+    this._renderFrame();
   }
 
   /**
