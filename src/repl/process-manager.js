@@ -52,7 +52,13 @@ export const FRAME_MS   = 100;     // ~10 fps re-render
 let _nextId = 0;
 
 export class ManagedProcess {
-  constructor(label) {
+  /**
+   * @param {string} label
+   * @param {{ maxTail?: number|null }} [opts]
+   *   maxTail: lines to show (default MAX_TAIL). null = all lines (fills
+   *   available scroll region; process-view still clips to the viewport).
+   */
+  constructor(label, { maxTail = MAX_TAIL } = {}) {
     this.id        = ++_nextId;
     this.label     = label;
     this.lines     = [];      // accumulated stdout+stderr lines
@@ -60,13 +66,17 @@ export class ManagedProcess {
     this.exitCode  = null;    // null while running
     this.exitedAt  = null;
     this._proc     = null;
+    this.maxTail   = maxTail; // null = show full output
   }
 
   get running()    { return this.exitCode === null; }
   get elapsedSec() { return ((this.exitedAt ?? Date.now()) - this.startedAt) / 1000; }
   get expired()    { return this.exitedAt !== null && Date.now() - this.exitedAt > EXPIRY_MS; }
 
-  tail() { return this.lines.slice(-MAX_TAIL); }
+  tail() {
+    if (this.maxTail == null) return this.lines;
+    return this.lines.slice(-this.maxTail);
+  }
 }
 
 export class ProcessManager {
@@ -158,11 +168,15 @@ export class ProcessManager {
   /**
    * Add an already-completed synthetic entry (for :help, :vars, errors, etc.).
    * Entries with no content are skipped.
+   * @param {string} label
+   * @param {string[]} lines
+   * @param {{ maxTail?: number|null }} [opts] - pass maxTail: null for full output
+   *   (help listings); default still uses MAX_TAIL like live commands.
    */
-  addSynthetic(label, lines) {
+  addSynthetic(label, lines, { maxTail = MAX_TAIL } = {}) {
     const filtered = lines.filter(l => l !== undefined && l !== null);
     if (filtered.length === 0) return null;
-    const mp = new ManagedProcess(label);
+    const mp = new ManagedProcess(label, { maxTail });
     mp.lines     = filtered;
     mp.exitCode  = 0;
     mp.exitedAt  = Date.now();

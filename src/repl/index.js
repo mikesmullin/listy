@@ -1268,7 +1268,7 @@ export class Repl {
           ':vars           - List variables',
           ':reload         - Reload activities',
           ':q / :quit      - Exit',
-        ]);
+        ], { maxTail: null });
         break;
 
       default:
@@ -1421,7 +1421,8 @@ export class Repl {
         lines.push(`  ${alias} -> ${target}`);
       }
     }
-    processManager.addSynthetic('?help', lines);
+    // Full listing: use entire scroll region (not the 5-line command tail)
+    processManager.addSynthetic('?help', lines, { maxTail: null });
   }
   
   /**
