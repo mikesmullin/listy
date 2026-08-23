@@ -147,7 +147,7 @@ export function clearFlashMessage() {
   flashCallback = null;
 }
 
-// Color name to ANSI code map
+// Color name to ANSI code map (background)
 const BG_COLORS = {
   black: `${ESC}[40m`,
   red: `${ESC}[41m`,
@@ -168,12 +168,32 @@ const BG_COLORS = {
   brightWhite: `${ESC}[107m`,
 };
 
+const FG_COLORS = {
+  black: `${ESC}[30m`,
+  red: `${ESC}[31m`,
+  green: `${ESC}[32m`,
+  yellow: `${ESC}[33m`,
+  blue: `${ESC}[34m`,
+  magenta: `${ESC}[35m`,
+  cyan: `${ESC}[36m`,
+  white: `${ESC}[37m`,
+  // Bright variants
+  brightBlack: `${ESC}[90m`,
+  brightRed: `${ESC}[91m`,
+  brightGreen: `${ESC}[92m`,
+  brightYellow: `${ESC}[93m`,
+  brightBlue: `${ESC}[94m`,
+  brightMagenta: `${ESC}[95m`,
+  brightCyan: `${ESC}[96m`,
+  brightWhite: `${ESC}[97m`,
+};
+
 /**
  * Parse hex color to RGB values
  * @param {string} hex - Hex color string (e.g., "#3a86ff" or "3a86ff")
  * @returns {{r: number, g: number, b: number}|null} RGB values or null if invalid
  */
-function parseHexColor(hex) {
+export function parseHexColor(hex) {
   const match = hex.match(/^#?([0-9a-fA-F]{6})$/);
   if (!match) return null;
   
@@ -191,7 +211,7 @@ function parseHexColor(hex) {
  * @param {string} color - Color name or hex value
  * @returns {string} ANSI escape sequence
  */
-function getBgColor(color) {
+export function getBgColor(color) {
   if (!color) return BG_COLORS.blue;
   
   // Check for hex format
@@ -205,6 +225,28 @@ function getBgColor(color) {
   
   // Named color
   return BG_COLORS[color] || BG_COLORS.blue;
+}
+
+/**
+ * Get foreground color ANSI code
+ * Supports named colors and hex format (e.g., "#3a86ff")
+ * @param {string} color - Color name or hex value
+ * @returns {string} ANSI escape sequence
+ */
+export function getFgColor(color) {
+  if (!color) return FG_WHITE;
+  
+  // Check for hex format
+  if (color.startsWith('#') || /^[0-9a-fA-F]{6}$/.test(color)) {
+    const rgb = parseHexColor(color);
+    if (rgb) {
+      // ANSI 24-bit color: ESC[38;2;R;G;Bm
+      return `${ESC}[38;2;${rgb.r};${rgb.g};${rgb.b}m`;
+    }
+  }
+  
+  // Named color
+  return FG_COLORS[color] || FG_WHITE;
 }
 
 /**
@@ -314,12 +356,14 @@ export function resetScrollRegion() {
 /**
  * Format the activity badge
  * @param {string} name - Activity name
- * @param {string} color - Background color name or hex value (optional)
+ * @param {string} background - Background color name or hex value (optional)
+ * @param {string} color - Foreground color name or hex value (optional)
  * @returns {string} Formatted badge
  */
-function formatActivityBadge(name, color = 'blue') {
-  const bgColor = getBgColor(color);
-  return `${BOLD}${bgColor}${FG_WHITE} ${name || 'none'} ${RESET}`;
+export function formatActivityBadge(name, background = 'blue', color = null) {
+  const bgColor = getBgColor(background);
+  const fgColor = color ? getFgColor(color) : FG_WHITE;
+  return `${BOLD}${bgColor}${fgColor} ${name || 'none'} ${RESET}`;
 }
 
 /**
@@ -472,15 +516,22 @@ export function renderStatusbar(state) {
   const activityName = store.getCurrentActivityName();
   const activityData = store.getCurrentActivity();
   
-  // Use explicit color or default based on activity index
-  let activityColor = activityData?.activity?.color;
-  if (!activityColor) {
+  // Use explicit background/color or default based on activity index
+  // `background` is the badge background, `color` is the foreground (font) color
+  let activityBg = activityData?.activity?.background;
+  let activityFg = activityData?.activity?.color;
+  // Legacy fallback: old files used `color` as background before rename
+  if (!activityBg && activityFg) {
+    activityBg = activityFg;
+    activityFg = null;
+  }
+  if (!activityBg) {
     const activityIndex = store.getActivityIndex(activityName);
-    activityColor = DEFAULT_ACTIVITY_COLORS[activityIndex % DEFAULT_ACTIVITY_COLORS.length];
+    activityBg = DEFAULT_ACTIVITY_COLORS[activityIndex % DEFAULT_ACTIVITY_COLORS.length];
   }
   
   // Build components
-  const activity = formatActivityBadge(activityName, activityColor);
+  const activity = formatActivityBadge(activityName, activityBg, activityFg);
   const buffer = state.buffer || '';
   const cursor = '█';
   const mode = formatMode(state.mode);

@@ -1,0 +1,41 @@
+name: home
+description: home automation controls
+color: "#ffffff"
+background: "#ff00c8"
+weight: 0
+shell_prefix: ~/launch.sh
+shell_aliases:
+  d: discord
+  code: code
+  kp: keepass
+  sc: speedcrunch
+  q: qpwgraph
+  pavu: pavucontrol
+  lm: lm-studio
+  key: screenkey
+commands:
+  A: systemctl --user restart presence-voice ada-back && ~/launch1.sh ada avatar
+  R: redshift -x && redshift -O 1200
+  S: ~/shutdown.sh
+  M: ~/morning.sh
+  m: cd /workspace/miriam && ./start.sh
+  h: ~/headset.sh
+  t: systemctl --user restart perception-voice whisper
+  T: systemctl --user stop perception-voice whisper
+  w: ~/swap-asink.sh zone
+  z: ~/swap-asink.sh scarlett
+  #B: ~/swap-asink.sh earbuds
+  B: ~/swap-asink.sh airpods
+  J: yay -Sy --noconfirm visual-studio-code-bin
+  K: yay -Sy --noconfirm discord
+  U: sudo pacman -Syu --noconfirm
+  b:
+    #shell: subd -t home turn all lights blue
+    shell: cd /workspace/agl && bun src/agents/home.mjs turn all lights blue
+    word: blue
+    voice: '(lights|blue)'
+  r:
+    #shell: subd -t home turn all lights red
+    shell: cd /workspace/agl && bun src/agents/home.mjs turn all lights red
+    word: red
+    voice: '(lights|red)'
