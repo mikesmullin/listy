@@ -1,11 +1,12 @@
 /**
  * Activity file loader
- * Reads YAML activity files from ./activity/
+ * Reads YAML activity files from ~/.config/mari/activity/
  */
 
 import { readdir, readFile, writeFile, mkdir, truncate, appendFile } from 'fs/promises';
 import { existsSync, createWriteStream } from 'fs';
-import { join, dirname, relative } from 'path';
+import { join, dirname } from 'path';
+import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 import { parseYaml, stringifyYaml } from '../utils/yaml.js';
 import { validateActivity, getDefaultActivity } from './schema.js';
@@ -29,8 +30,53 @@ export {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..');
-const ACTIVITY_DIR = join(PROJECT_ROOT, 'activity');
+const USER_ACTIVITY_DIR = join(homedir(), '.config', 'mari', 'activity');
 const CONFIG_FILE = join(PROJECT_ROOT, 'config.yml');
+
+/**
+ * Format a path for display, using ~ for the home directory
+ * @param {string} filePath - Absolute path
+ * @returns {string} Display path
+ */
+function formatActivityPath(filePath) {
+  const home = homedir();
+  if (filePath === home || filePath.startsWith(home + '/')) {
+    return '~' + filePath.slice(home.length);
+  }
+  return filePath;
+}
+
+/**
+ * Recursively collect YAML activity files under a directory
+ * @param {string} dir - Directory to walk
+ * @returns {Promise<string[]>} Sorted absolute file paths
+ */
+async function collectActivityFiles(dir) {
+  const results = [];
+
+  async function walk(current) {
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const fullPath = join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+      } else if (entry.isFile() && (entry.name.endsWith('.yml') || entry.name.endsWith('.yaml'))) {
+        results.push(fullPath);
+      }
+    }
+  }
+
+  await walk(dir);
+  results.sort();
+  return results;
+}
 
 // Global config cache
 let globalConfig = null;
@@ -85,32 +131,37 @@ export async function getFlashMsPerChar() {
 }
 
 /**
- * Ensure activity directory exists
+ * Ensure user activity directory exists
  */
 export async function ensureActivityDir() {
-  if (!existsSync(ACTIVITY_DIR)) {
-    await mkdir(ACTIVITY_DIR, { recursive: true });
+  if (!existsSync(USER_ACTIVITY_DIR)) {
+    await mkdir(USER_ACTIVITY_DIR, { recursive: true });
   }
 }
 
 /**
- * Load all activity files from the activity directory
+ * Load all activity files from ~/.config/mari/activity/
  * @returns {Promise<object[]>} Array of activity objects
  */
 export async function loadActivities() {
   await ensureActivityDir();
   
   const activities = [];
+  const seenNames = new Map();
   
   try {
-    const files = await readdir(ACTIVITY_DIR);
-    const ymlFiles = files.filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+    const files = await collectActivityFiles(USER_ACTIVITY_DIR);
     
-    for (const file of ymlFiles) {
-      const filePath = join(ACTIVITY_DIR, file);
+    for (const filePath of files) {
+      const displayPath = formatActivityPath(filePath);
       try {
         const content = await readFile(filePath, 'utf8');
         const activity = parseYaml(content);
+
+        if (!activity || typeof activity !== 'object') {
+          console.error(`Error loading ${displayPath}: file did not contain an activity object`);
+          continue;
+        }
         
         // Add file path for persistence
         activity._filePath = filePath;
@@ -118,7 +169,12 @@ export async function loadActivities() {
         // Validate schema
         const validation = validateActivity(activity);
         if (!validation.valid) {
-          console.error(`Warning: ${file} has errors:`, validation.errors);
+          console.error(`Warning: ${displayPath} has errors:`, validation.errors);
+        }
+
+        if (activity.name && seenNames.has(activity.name)) {
+          console.error(`Warning: duplicate activity name '${activity.name}' in ${displayPath} (already loaded from ${seenNames.get(activity.name)}); skipping`);
+          continue;
         }
         
         // Validate hotkey conflicts
@@ -133,10 +189,14 @@ export async function loadActivities() {
         
         // Initialize runtime values
         initializeRuntimeValues(activity);
+
+        if (activity.name) {
+          seenNames.set(activity.name, displayPath);
+        }
         
         activities.push(activity);
       } catch (err) {
-        console.error(`Error loading ${file}:`, err.message);
+        console.error(`Error loading ${displayPath}:`, err.message);
       }
     }
   } catch (err) {
@@ -167,8 +227,7 @@ function validateHotkeyConflicts(activity, content, filePath) {
   const hotkeyMap = new Map(); // hotkey -> { type, name, line }
   
   const lines = content.split('\n');
-  // Use path relative to project root (e.g., 'activity/discord.yml')
-  const relativeFilePath = relative(PROJECT_ROOT, filePath);
+  const relativeFilePath = formatActivityPath(filePath);
   
   /**
    * Find line number for a hotkey definition
@@ -415,7 +474,7 @@ export async function createActivity(name, config = {}) {
     name
   };
   
-  const filePath = join(ACTIVITY_DIR, `${name}.yml`);
+  const filePath = join(USER_ACTIVITY_DIR, `${name}.yml`);
   activity._filePath = filePath;
   
   initializeRuntimeValues(activity);
@@ -427,9 +486,9 @@ export async function createActivity(name, config = {}) {
 }
 
 /**
- * Get the activity directory path
+ * Get the user activity directory path
  * @returns {string} Activity directory path
  */
 export function getActivityDir() {
-  return ACTIVITY_DIR;
+  return USER_ACTIVITY_DIR;
 }

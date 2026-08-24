@@ -1,6 +1,7 @@
 /tmp/
 node_modules/
 /docs/PROMPT.md
+# Personal activities live in ~/.config/mari/activity/ — never commit them here
 /activity/*.yml
 /activity/*.yaml
 /buffer.log

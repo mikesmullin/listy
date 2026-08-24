@@ -29,6 +29,10 @@ bun install
 
 # Link globally
 bun link
+
+# Copy an example activity into your config dir
+mkdir -p ~/.config/mari/activity
+cp activity-examples/home.yml ~/.config/mari/activity/
 ```
 
 ## Usage
@@ -166,7 +170,14 @@ All stdout/stderr from executed commands is captured to `buffer.log` in the proj
 
 ## Activity Configuration
 
-Activities are defined in YAML files in the `activity/` directory:
+Activities are YAML files under `~/.config/mari/activity/` (subdirectories included). The repo's `activity-examples/` directory is documentation only — mari does not load it. Copy an example into your config directory to use it:
+
+```bash
+mkdir -p ~/.config/mari/activity
+cp activity-examples/home.yml ~/.config/mari/activity/
+```
+
+Example activity file:
 
 ```yaml
 name: robin
