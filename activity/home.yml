@@ -1,7 +1,7 @@
 name: home
 description: home automation controls
 color: "#ffffff"
-background: "#ff00c8"
+background: "#4dff00"
 weight: 0
 shell_prefix: ~/launch.sh
 shell_aliases:
@@ -14,28 +14,16 @@ shell_aliases:
   lm: lm-studio
   key: screenkey
 commands:
-  A: systemctl --user restart presence-voice ada-back && ~/launch1.sh ada avatar
-  R: redshift -x && redshift -O 1200
-  S: ~/shutdown.sh
-  M: ~/morning.sh
-  m: cd /workspace/miriam && ./start.sh
+  #M: ~/morning.sh
+  l:
+    shell: cd /workspace/agl && bun src/agents/home.mjs turn pc light red and desk lamp off
+    word: lamp
+    voice: '(lights)'
+  r: redshift -O 1200
+  R: redshift -x
   h: ~/headset.sh
-  t: systemctl --user restart perception-voice whisper
-  T: systemctl --user stop perception-voice whisper
   w: ~/swap-asink.sh zone
   z: ~/swap-asink.sh scarlett
   #B: ~/swap-asink.sh earbuds
-  B: ~/swap-asink.sh airpods
-  J: yay -Sy --noconfirm visual-studio-code-bin
-  K: yay -Sy --noconfirm discord
-  U: sudo pacman -Syu --noconfirm
-  b:
-    #shell: subd -t home turn all lights blue
-    shell: cd /workspace/agl && bun src/agents/home.mjs turn all lights blue
-    word: blue
-    voice: '(lights|blue)'
-  r:
-    #shell: subd -t home turn all lights red
-    shell: cd /workspace/agl && bun src/agents/home.mjs turn all lights red
-    word: red
-    voice: '(lights|red)'
+  B: ~/swap-asink.sh airpods  
+  #m: cd /workspace/miriam && ./start.sh
