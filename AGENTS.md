@@ -1,0 +1,2 @@
+- read `README.md` to understand this project
+- read the `~/.config/mari/` to understand how it is configured

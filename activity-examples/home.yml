@@ -16,7 +16,7 @@ shell_aliases:
 commands:
   #M: ~/morning.sh
   l:
-    shell: cd /workspace/agl && bun src/agents/home.mjs turn pc light red and desk lamp off
+    shell: cd /workspace/agl && bun src/agents/home.mjs "turn pc light rgb(40,0,0) and desk lamp off"
     word: lamp
     voice: '(lights)'
   r: redshift -O 1200
